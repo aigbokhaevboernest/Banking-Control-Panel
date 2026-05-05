@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Shield, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function Login() {
   const { signIn, user, isAdmin, loading } = useAuth();
@@ -22,13 +23,40 @@ export default function Login() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+
     const { error } = await signIn(email.trim(), password);
-    setSubmitting(false);
-    if (error) toast.error(error);
-    else {
-      toast.success("Welcome back");
-      navigate("/", { replace: true });
+
+    if (error) {
+      toast.error(error);
+      setSubmitting(false);
+      return;
     }
+
+    // After sign in — check role directly from profiles table
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+
+    if (!authUser) {
+      toast.error("Authentication failed. Please try again.");
+      setSubmitting(false);
+      return;
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", authUser.id)
+      .single();
+
+    if (profileError || !profile || profile.role !== "admin") {
+      await supabase.auth.signOut();
+      toast.error("Access denied. Admins only.");
+      setSubmitting(false);
+      return;
+    }
+
+    toast.success("Welcome back");
+    setSubmitting(false);
+    navigate("/", { replace: true });
   };
 
   return (
@@ -39,7 +67,9 @@ export default function Login() {
             <Shield className="h-6 w-6" />
           </div>
           <h1 className="text-xl font-bold">Nova Bank Admin</h1>
-          <p className="text-sm text-muted-foreground">Sign in to manage the platform</p>
+          <p className="text-sm text-muted-foreground">
+            Sign in to manage the platform
+          </p>
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -66,7 +96,11 @@ export default function Login() {
             />
           </div>
           <Button type="submit" className="w-full" disabled={submitting}>
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
+            {submitting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              "Sign in"
+            )}
           </Button>
         </form>
       </Card>
