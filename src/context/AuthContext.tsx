@@ -21,12 +21,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const checkAdmin = async (uid: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", uid)
       .eq("role", "admin")
       .maybeSingle();
+    if (error) console.error("Admin role check failed:", error.message);
     setIsAdmin(!!data);
   };
 
@@ -54,12 +55,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
-    const { data: roleData } = await supabase
+    const { data: roleData, error: roleError } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", data.user!.id)
       .eq("role", "admin")
       .maybeSingle();
+    if (roleError) {
+      await supabase.auth.signOut();
+      return { error: `Admin role check failed: ${roleError.message}` };
+    }
     if (!roleData) {
       await supabase.auth.signOut();
       return { error: "Access denied. Admins only." };
