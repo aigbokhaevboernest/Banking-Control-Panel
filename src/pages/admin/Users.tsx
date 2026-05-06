@@ -116,7 +116,7 @@ export default function Users() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem asChild>
-                      <Link to={`/users/${u.id}`}>
+                      <Link to={`/admin/users/${u.id}`}>
                         <Eye className="mr-2 h-4 w-4" /> View user
                       </Link>
                     </DropdownMenuItem>
