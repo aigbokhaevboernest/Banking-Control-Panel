@@ -116,7 +116,7 @@ export default function UserProfile() {
   return (
     <div className="space-y-4">
       <Button variant="ghost" size="sm" asChild>
-        <Link to="/users">
+        <Link to="/admin/users">
           <ArrowLeft className="mr-2 h-4 w-4" /> Back to users
         </Link>
       </Button>

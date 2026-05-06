@@ -19,14 +19,14 @@ import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
-  { to: "/users", label: "Users", icon: Users },
-  { to: "/transactions", label: "Transactions", icon: ArrowLeftRight },
-  { to: "/deposits", label: "Deposits", icon: Wallet },
-  { to: "/loans", label: "Loans", icon: Landmark },
-  { to: "/transfers", label: "Transfers", icon: Send },
-  { to: "/cards", label: "Edit Cards", icon: CreditCard },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/admin", label: "Overview", icon: LayoutDashboard, end: true },
+  { to: "/admin/users", label: "Users", icon: Users },
+  { to: "/admin/transactions", label: "Transactions", icon: ArrowLeftRight },
+  { to: "/admin/deposits", label: "Deposits", icon: Wallet },
+  { to: "/admin/loans", label: "Loans", icon: Landmark },
+  { to: "/admin/transfers", label: "Transfers", icon: Send },
+  { to: "/admin/cards", label: "Edit Cards", icon: CreditCard },
+  { to: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
 export default function AdminLayout() {
@@ -41,7 +41,7 @@ export default function AdminLayout() {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate("/login");
+    navigate("/admin/login");
   };
 
   const NavList = ({ onNavigate }: { onNavigate?: () => void }) => (

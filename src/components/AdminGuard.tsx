@@ -10,6 +10,6 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
       </div>
     );
-  if (!user || !isAdmin) return <Navigate to="/login" replace />;
+  if (!user || !isAdmin) return <Navigate to="/admin/login" replace />;
   return <>{children}</>;
 }
