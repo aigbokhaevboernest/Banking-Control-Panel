@@ -187,7 +187,7 @@ export default function UserProfile() {
                 if (!confirm("Delete this account?")) return;
                 await supabase.from("profiles").delete().eq("id", p.id);
                 toast.success("Deleted");
-                window.location.href = "/users";
+                window.location.href = "/admin/users";
               }}
             >
               <Trash2 className="mr-2 h-4 w-4" /> Delete account
