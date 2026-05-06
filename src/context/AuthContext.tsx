@@ -32,19 +32,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-  setSession(s);
-  setUser(s?.user ?? null);
-  if (s?.user) {
-    setLoading(true);                                          // ✅
-    checkAdmin(s.user.id).finally(() => setLoading(false));   // ✅
-  } else {
-    setIsAdmin(false);
-    setLoading(false);                                         // ✅
-  }
-});
- else {
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s);
+      setUser(s?.user ?? null);
+      if (s?.user) {
+        setLoading(true);
+        checkAdmin(s.user.id).finally(() => setLoading(false));
+      } else {
         setIsAdmin(false);
+        setLoading(false);
       }
     });
 
