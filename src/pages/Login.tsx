@@ -16,7 +16,7 @@ export default function Login() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!loading && user && isAdmin) navigate("/", { replace: true });
+    if (!loading && user && isAdmin) navigate("/admin", { replace: true });
   }, [user, isAdmin, loading, navigate]);
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -27,7 +27,7 @@ export default function Login() {
     if (error) toast.error(error);
     else {
       toast.success("Welcome back");
-      navigate("/", { replace: true });
+      navigate("/admin", { replace: true });
     }
   };
 
