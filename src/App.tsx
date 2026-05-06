@@ -28,23 +28,26 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<Navigate to="/admin" replace />} />
+            <Route path="/login" element={<Navigate to="/admin/login" replace />} />
+            <Route path="/admin/login" element={<Login />} />
             <Route
+              path="/admin"
               element={
                 <AdminGuard>
                   <AdminLayout />
                 </AdminGuard>
               }
             >
-              <Route path="/" element={<Overview />} />
-              <Route path="/users" element={<Users />} />
-              <Route path="/users/:id" element={<UserProfile />} />
-              <Route path="/transactions" element={<Transactions />} />
-              <Route path="/deposits" element={<Deposits />} />
-              <Route path="/loans" element={<Loans />} />
-              <Route path="/transfers" element={<Transfers />} />
-              <Route path="/cards" element={<Cards />} />
-              <Route path="/settings" element={<SettingsPage />} />
+              <Route index element={<Overview />} />
+              <Route path="users" element={<Users />} />
+              <Route path="users/:id" element={<UserProfile />} />
+              <Route path="transactions" element={<Transactions />} />
+              <Route path="deposits" element={<Deposits />} />
+              <Route path="loans" element={<Loans />} />
+              <Route path="transfers" element={<Transfers />} />
+              <Route path="cards" element={<Cards />} />
+              <Route path="settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
