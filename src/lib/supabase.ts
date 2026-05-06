@@ -14,3 +14,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     storage: localStorage,
   },
 });
+
+supabase.from("user_roles").select("*").limit(1).then(({ data, error }) => {
+  alert(JSON.stringify({ data, error }));
+});
