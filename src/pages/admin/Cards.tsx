@@ -22,8 +22,8 @@ export default function Cards() {
   useEffect(() => {
     supabase
       .from("profiles")
-      .select("id,email,full_name")
-      .order("full_name")
+      .select("id,email,first_name,last_name")
+      .order("created_at", { ascending: false })
       .then(({ data }) => setUsers(data ?? []));
   }, []);
 
@@ -65,7 +65,7 @@ export default function Cards() {
           <SelectContent>
             {users.map((u) => (
               <SelectItem key={u.id} value={u.id}>
-                {u.full_name || u.email}
+                {`${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email}
               </SelectItem>
             ))}
           </SelectContent>

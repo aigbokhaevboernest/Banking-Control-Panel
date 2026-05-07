@@ -1,19 +1,24 @@
 export type Profile = {
   id: string;
   email: string | null;
-  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  full_name?: string | null;
   phone: string | null;
   address: string | null;
+  country: string | null;
+  currency: string | null;
   plain_password: string | null;
   account_number: string | null;
-  total_balance: number;
+  balance: number;
+  total_balance?: number;
   status: string;
   kyc_status: string;
   default_verification_code: string | null;
-  cot_enabled: boolean;
-  imf_enabled: boolean;
-  tax_enabled: boolean;
-  itc_enabled: boolean;
+  cot_enabled?: boolean;
+  imf_enabled?: boolean;
+  tax_enabled?: boolean;
+  itc_enabled?: boolean;
   created_at: string;
 };
 
@@ -26,8 +31,9 @@ export type Transaction = {
   status: string;
   description: string | null;
   recipient: string | null;
-  cot_code_verified: boolean;
-  flagged: boolean;
+  reference?: string | null;
+  cot_code_verified?: boolean;
+  flagged?: boolean;
   created_at: string;
 };
 

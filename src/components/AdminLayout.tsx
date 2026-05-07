@@ -16,6 +16,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
+import { useIdleLogout } from "@/hooks/useIdleLogout";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -34,6 +35,7 @@ export default function AdminLayout() {
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  useIdleLogout();
 
   const currentTitle =
     navItems.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to)))
