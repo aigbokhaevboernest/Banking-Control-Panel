@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import type { Profile, WithdrawalCode } from "@/types/db";
 import { Card } from "@/components/ui/card";
@@ -17,6 +17,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ArrowLeft,
   Eye,
   EyeOff,
@@ -27,18 +37,28 @@ import {
   ShieldX,
   Flag,
 } from "lucide-react";
-import { fmtMoney } from "@/lib/format";
+import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 
 const CODE_TYPES = ["COT", "IMF", "TAX", "ITC"] as const;
 
+const statusBadge = (s: string) =>
+  s === "active"
+    ? "bg-[hsl(var(--success))]/15 text-[hsl(var(--success))] border-[hsl(var(--success))]/30"
+    : s === "blocked"
+    ? "bg-destructive/15 text-destructive border-destructive/30"
+    : "bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))] border-[hsl(var(--warning))]/30";
+
 export default function UserProfile() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [p, setP] = useState<Profile | null>(null);
   const [codes, setCodes] = useState<WithdrawalCode[]>([]);
   const [showPwd, setShowPwd] = useState(false);
   const [delta, setDelta] = useState("");
   const [newCode, setNewCode] = useState({ type: "COT" as (typeof CODE_TYPES)[number], code: "" });
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const load = async () => {
     if (!id) return;
@@ -68,12 +88,11 @@ export default function UserProfile() {
   const adjustBalance = async (sign: 1 | -1) => {
     const v = Number(delta);
     if (!v || isNaN(v)) return toast.error("Enter an amount");
-    const next = Number(p.total_balance) + sign * v;
-    await update({ total_balance: next });
+    const next = Number(p.balance ?? p.total_balance ?? 0) + sign * v;
+    await update({ balance: next } as any);
     setDelta("");
   };
 
-  const setStatus = (status: string) => update({ status });
   const setKyc = (kyc_status: string) => update({ kyc_status });
 
   const addCode = async () => {
@@ -83,7 +102,7 @@ export default function UserProfile() {
         user_id: p.id,
         code_type: newCode.type,
         code: newCode.code.toUpperCase(),
-        enabled: newCode.type === "COT" ? true : true,
+        enabled: true,
       },
       { onConflict: "user_id,code_type" }
     );
@@ -113,6 +132,8 @@ export default function UserProfile() {
     load();
   };
 
+  const balance = p.balance ?? p.total_balance ?? 0;
+
   return (
     <div className="space-y-4">
       <Button variant="ghost" size="sm" asChild>
@@ -124,14 +145,14 @@ export default function UserProfile() {
       <Card className="p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold">{p.full_name || "Unnamed"}</h2>
+            <h2 className="text-lg font-bold">{fullName(p)}</h2>
             <p className="text-xs text-muted-foreground">{p.email}</p>
             <p className="text-xs text-muted-foreground">#{p.account_number}</p>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-bold">{fmtMoney(p.total_balance)}</p>
+            <p className="text-2xl font-bold">{fmtMoney(balance, p.currency || "USD")}</p>
             <div className="mt-1 flex flex-wrap justify-end gap-1">
-              <Badge variant="outline">{p.status}</Badge>
+              <Badge variant="outline" className={statusBadge(p.status)}>{p.status}</Badge>
               <Badge variant="outline">KYC: {p.kyc_status}</Badge>
             </div>
           </div>
@@ -148,10 +169,13 @@ export default function UserProfile() {
 
         <TabsContent value="profile" className="space-y-3">
           <Card className="space-y-3 p-4">
-            <Field label="Full name" value={p.full_name ?? ""} onSave={(v) => update({ full_name: v })} />
+            <Field label="First name" value={p.first_name ?? ""} onSave={(v) => update({ first_name: v })} />
+            <Field label="Last name" value={p.last_name ?? ""} onSave={(v) => update({ last_name: v })} />
             <Field label="Email" value={p.email ?? ""} onSave={(v) => update({ email: v })} />
             <Field label="Phone" value={p.phone ?? ""} onSave={(v) => update({ phone: v })} />
             <Field label="Address" value={p.address ?? ""} onSave={(v) => update({ address: v })} />
+            <Field label="Country" value={p.country ?? ""} onSave={(v) => update({ country: v })} />
+            <Field label="Currency" value={p.currency ?? ""} onSave={(v) => update({ currency: v })} />
 
             <div className="space-y-2">
               <Label>Password (plain text)</Label>
@@ -168,27 +192,52 @@ export default function UserProfile() {
               <Button size="sm" onClick={() => update({ plain_password: p.plain_password })}>
                 Save password
               </Button>
+              {!p.plain_password && (
+                <p className="text-xs text-muted-foreground">
+                  No plain password stored. Add a `plain_password` column on profiles to capture it at signup.
+                </p>
+              )}
             </div>
           </Card>
 
           <Card className="space-y-2 p-4">
             <Label>Account status</Label>
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" size="sm" onClick={() => setStatus("active")}>Activate</Button>
-              <Button variant="outline" size="sm" onClick={() => setStatus("frozen")}>Freeze</Button>
-              <Button variant="outline" size="sm" onClick={() => setStatus("suspended")}>Suspend</Button>
-              <Button variant="destructive" size="sm" onClick={() => setStatus("blocked")}>Block</Button>
+              <Button
+                variant={p.status === "active" ? "default" : "outline"}
+                size="sm"
+                className={p.status === "active" ? "bg-[hsl(var(--success))] hover:bg-[hsl(var(--success))]/90" : ""}
+                onClick={() => setPendingStatus("active")}
+              >
+                Activate
+              </Button>
+              <Button
+                variant={p.status === "frozen" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setPendingStatus("frozen")}
+              >
+                Freeze
+              </Button>
+              <Button
+                variant={p.status === "suspended" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setPendingStatus("suspended")}
+              >
+                Suspend
+              </Button>
+              <Button
+                variant={p.status === "blocked" ? "destructive" : "outline"}
+                size="sm"
+                onClick={() => setPendingStatus("blocked")}
+              >
+                Block
+              </Button>
             </div>
             <Button
               variant="destructive"
               size="sm"
               className="w-full"
-              onClick={async () => {
-                if (!confirm("Delete this account?")) return;
-                await supabase.from("profiles").delete().eq("id", p.id);
-                toast.success("Deleted");
-                window.location.href = "/admin/users";
-              }}
+              onClick={() => setConfirmDelete(true)}
             >
               <Trash2 className="mr-2 h-4 w-4" /> Delete account
             </Button>
@@ -197,7 +246,7 @@ export default function UserProfile() {
 
         <TabsContent value="balance">
           <Card className="space-y-3 p-4">
-            <Label>Adjust balance</Label>
+            <Label>Adjust balance ({fmtMoney(balance, p.currency || "USD")})</Label>
             <Input
               type="number"
               placeholder="Amount"
@@ -217,7 +266,7 @@ export default function UserProfile() {
 
         <TabsContent value="kyc">
           <Card className="space-y-3 p-4">
-            <Label>KYC status (ID.me)</Label>
+            <Label>KYC status</Label>
             <p className="text-xs text-muted-foreground">Current: {p.kyc_status}</p>
             <div className="grid grid-cols-3 gap-2">
               <Button size="sm" onClick={() => setKyc("approved")}>
@@ -301,6 +350,50 @@ export default function UserProfile() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={!!pendingStatus} onOpenChange={(o) => !o && setPendingStatus(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change status to "{pendingStatus}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will immediately affect {p.email}'s account access.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (pendingStatus) await update({ status: pendingStatus });
+                setPendingStatus(null);
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this account?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                const { error } = await supabase.from("profiles").delete().eq("id", p.id);
+                if (error) return toast.error(error.message);
+                toast.success("Deleted");
+                navigate("/admin/users");
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
