@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { fmtDate, fmtMoney } from "@/lib/format";
+import { fmtDate, fmtMoney, fullName } from "@/lib/format";
 
 export default function Deposits() {
   const [items, setItems] = useState<any[]>([]);
   useEffect(() => {
     supabase
       .from("deposits")
-      .select("*, profiles!deposits_user_id_fkey(email,full_name)")
+      .select("*, profiles(first_name,last_name,email,account_number)")
       .order("created_at", { ascending: false })
       .then(({ data }) => setItems(data ?? []));
   }, []);
@@ -23,9 +23,8 @@ export default function Deposits() {
         <Card key={d.id} className="p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium">
-                {d.profiles?.full_name || d.profiles?.email || d.user_id.slice(0, 8)}
-              </p>
+              <p className="truncate text-sm font-medium">{fullName(d.profiles)}</p>
+              <p className="text-xs text-muted-foreground">{d.profiles?.email}</p>
               <p className="text-xs text-muted-foreground">{fmtDate(d.created_at)}</p>
               <p className="text-xs text-muted-foreground">{d.method ?? "—"}</p>
             </div>
