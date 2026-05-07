@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import type { Profile } from "@/types/db";
@@ -13,9 +13,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MoreVertical, Eye, Ban, Trash2, Hash, Search } from "lucide-react";
-import { fmtMoney } from "@/lib/format";
+import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 
 const statusColor = (s: string) =>
@@ -28,12 +38,17 @@ const statusColor = (s: string) =>
 export default function Users() {
   const [users, setUsers] = useState<Profile[]>([]);
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "pending" | "kyc">("all");
+  const [filter, setFilter] = useState<"all" | "pending" | "kyc" | "blocked">("all");
   const [loading, setLoading] = useState(true);
+  const [confirm, setConfirm] = useState<{ kind: "block" | "delete"; user: Profile } | null>(null);
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) toast.error(error.message);
     setUsers((data as Profile[]) ?? []);
     setLoading(false);
   };
@@ -42,27 +57,33 @@ export default function Users() {
     load();
   }, []);
 
-  const filtered = users.filter((u) => {
-    if (filter === "pending" && u.status !== "pending") return false;
-    if (filter === "kyc" && u.kyc_status !== "pending") return false;
-    if (!q) return true;
-    const s = q.toLowerCase();
-    return (
-      u.email?.toLowerCase().includes(s) ||
-      u.full_name?.toLowerCase().includes(s) ||
-      u.account_number?.toLowerCase().includes(s)
-    );
-  });
+  const filtered = useMemo(
+    () =>
+      users.filter((u) => {
+        if (filter === "pending" && u.status !== "pending") return false;
+        if (filter === "blocked" && u.status !== "blocked") return false;
+        if (filter === "kyc" && u.kyc_status !== "pending") return false;
+        if (!q) return true;
+        const s = q.toLowerCase();
+        return (
+          u.email?.toLowerCase().includes(s) ||
+          fullName(u).toLowerCase().includes(s) ||
+          u.account_number?.toLowerCase().includes(s)
+        );
+      }),
+    [users, q, filter]
+  );
 
-  const block = async (u: Profile) => {
-    await supabase.from("profiles").update({ status: "blocked" }).eq("id", u.id);
+  const doBlock = async (u: Profile) => {
+    const { error } = await supabase.from("profiles").update({ status: "blocked" }).eq("id", u.id);
+    if (error) return toast.error(error.message);
     toast.success("User blocked");
     load();
   };
 
-  const del = async (u: Profile) => {
-    if (!confirm(`Delete ${u.email}? This cannot be undone.`)) return;
-    await supabase.from("profiles").delete().eq("id", u.id);
+  const doDelete = async (u: Profile) => {
+    const { error } = await supabase.from("profiles").delete().eq("id", u.id);
+    if (error) return toast.error(error.message);
     toast.success("User deleted");
     load();
   };
@@ -83,7 +104,8 @@ export default function Users() {
           <TabsList className="w-full">
             <TabsTrigger value="all" className="flex-1">All</TabsTrigger>
             <TabsTrigger value="pending" className="flex-1">Pending</TabsTrigger>
-            <TabsTrigger value="kyc" className="flex-1">Pending KYC</TabsTrigger>
+            <TabsTrigger value="kyc" className="flex-1">KYC</TabsTrigger>
+            <TabsTrigger value="blocked" className="flex-1">Blocked</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -99,14 +121,18 @@ export default function Users() {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="truncate font-semibold">{u.full_name || "Unnamed"}</p>
+                    <p className="truncate font-semibold">{fullName(u)}</p>
                     <Badge className={statusColor(u.status)} variant="outline">
                       {u.status}
                     </Badge>
                   </div>
                   <p className="truncate text-xs text-muted-foreground">{u.email}</p>
-                  <p className="mt-2 text-lg font-bold">{fmtMoney(u.total_balance)}</p>
-                  <p className="text-xs text-muted-foreground">#{u.account_number}</p>
+                  <p className="mt-2 text-lg font-bold">
+                    {fmtMoney(u.balance ?? u.total_balance, u.currency || "USD")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    #{u.account_number} · KYC: {u.kyc_status}
+                  </p>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -120,14 +146,22 @@ export default function Users() {
                         <Eye className="mr-2 h-4 w-4" /> View user
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => block(u)}>
+                    <DropdownMenuItem onClick={() => setConfirm({ kind: "block", user: u })}>
                       <Ban className="mr-2 h-4 w-4" /> Block
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigator.clipboard.writeText(u.account_number || "") && toast.success("Copied")}>
-                      <Hash className="mr-2 h-4 w-4" /> Account Code Info
+                    <DropdownMenuItem
+                      onClick={() => {
+                        navigator.clipboard.writeText(u.account_number || "");
+                        toast.success("Copied");
+                      }}
+                    >
+                      <Hash className="mr-2 h-4 w-4" /> Copy account #
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-destructive" onClick={() => del(u)}>
+                    <DropdownMenuItem
+                      className="text-destructive"
+                      onClick={() => setConfirm({ kind: "delete", user: u })}
+                    >
                       <Trash2 className="mr-2 h-4 w-4" /> Delete
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -137,6 +171,34 @@ export default function Users() {
           ))}
         </div>
       )}
+
+      <AlertDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirm?.kind === "delete" ? "Delete user?" : "Block user?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirm?.kind === "delete"
+                ? `This will permanently delete ${confirm?.user.email}.`
+                : `${confirm?.user.email} will lose access until reactivated.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!confirm) return;
+                if (confirm.kind === "delete") await doDelete(confirm.user);
+                else await doBlock(confirm.user);
+                setConfirm(null);
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

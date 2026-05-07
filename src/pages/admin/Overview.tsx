@@ -30,7 +30,7 @@ export default function Overview() {
 
       const [{ data: profiles }, { data: loans }, { data: txDay }, { data: flagged }] =
         await Promise.all([
-          supabase.from("profiles").select("status,total_balance"),
+          supabase.from("profiles").select("status,balance"),
           supabase.from("loans").select("id").eq("status", "pending"),
           supabase.from("transactions").select("amount").gte("created_at", since.toISOString()),
           supabase.from("transactions").select("id").eq("flagged", true),
@@ -41,7 +41,7 @@ export default function Overview() {
         active: profiles?.filter((p: any) => p.status === "active").length ?? 0,
         suspended:
           profiles?.filter((p: any) => ["suspended", "blocked"].includes(p.status)).length ?? 0,
-        totalBalance: profiles?.reduce((s: number, p: any) => s + Number(p.total_balance || 0), 0) ?? 0,
+        totalBalance: profiles?.reduce((s: number, p: any) => s + Number(p.balance || 0), 0) ?? 0,
         dailyVolume: txDay?.reduce((s: number, t: any) => s + Number(t.amount || 0), 0) ?? 0,
         pendingLoans: loans?.length ?? 0,
         flagged: flagged?.length ?? 0,
