@@ -58,7 +58,7 @@ export default function AdminLayout() {
   };
 
   const NavList = ({ onNavigate }: { onNavigate?: () => void }) => (
-    <nav className="flex flex-col gap-1 p-3">
+    <nav className="flex flex-col gap-1 overflow-y-auto p-3">
       {navItems.map((item) => (
         <NavLink
           key={item.to}
