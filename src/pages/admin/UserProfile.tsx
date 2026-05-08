@@ -64,7 +64,7 @@ export default function UserProfile() {
     if (!id) return;
     const [{ data: prof }, { data: cs }] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", id).maybeSingle(),
-      supabase.from("account_withdrawal_codes").select("*").eq("user_id", id),
+      supabase.from("withdrawal_codes").select("*").eq("user_id", id),
     ]);
     setP(prof as Profile | null);
     setCodes((cs as WithdrawalCode[]) ?? []);
@@ -88,7 +88,7 @@ export default function UserProfile() {
   const adjustBalance = async (sign: 1 | -1) => {
     const v = Number(delta);
     if (!v || isNaN(v)) return toast.error("Enter an amount");
-    const next = Number(p.balance ?? p.total_balance ?? 0) + sign * v;
+    const next = Number(p.balance ?? p.balance ?? 0) + sign * v;
     await update({ balance: next } as any);
     setDelta("");
   };
@@ -97,7 +97,7 @@ export default function UserProfile() {
 
   const addCode = async () => {
     if (!newCode.code) return toast.error("Enter a code");
-    const { error } = await supabase.from("account_withdrawal_codes").upsert(
+    const { error } = await supabase.from("withdrawal_codes").upsert(
       {
         user_id: p.id,
         code_type: newCode.type,
@@ -116,23 +116,23 @@ export default function UserProfile() {
 
   const toggleCode = async (c: WithdrawalCode, enabled: boolean) => {
     if (c.code_type === "COT") return toast.error("COT cannot be disabled");
-    await supabase.from("account_withdrawal_codes").update({ enabled }).eq("id", c.id);
+    await supabase.from("withdrawal_codes").update({ enabled }).eq("id", c.id);
     load();
   };
 
   const updateCodeValue = async (c: WithdrawalCode, code: string) => {
-    await supabase.from("account_withdrawal_codes").update({ code: code.toUpperCase() }).eq("id", c.id);
+    await supabase.from("withdrawal_codes").update({ code: code.toUpperCase() }).eq("id", c.id);
     load();
     toast.success("Code updated");
   };
 
   const deleteCode = async (c: WithdrawalCode) => {
     if (c.code_type === "COT") return toast.error("COT cannot be deleted");
-    await supabase.from("account_withdrawal_codes").delete().eq("id", c.id);
+    await supabase.from("withdrawal_codes").delete().eq("id", c.id);
     load();
   };
 
-  const balance = p.balance ?? p.total_balance ?? 0;
+  const balance = p.balance ?? p.balance ?? 0;
 
   return (
     <div className="space-y-4">
