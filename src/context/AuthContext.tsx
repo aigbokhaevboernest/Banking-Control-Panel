@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
@@ -19,6 +19,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const checkedUserId = useRef<string | null>(null);
 
   const checkAdmin = async (uid: string) => {
     const { data, error } = await supabase
@@ -29,26 +30,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .maybeSingle();
     if (error) console.error("Admin role check failed:", error.message);
     setIsAdmin(!!data);
+    checkedUserId.current = uid;
   };
 
   useEffect(() => {
+    // Initial bootstrap
+    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
+      setSession(s);
+      setUser(s?.user ?? null);
+      if (s?.user) await checkAdmin(s.user.id);
+      else setIsAdmin(false);
+      setLoading(false);
+    });
+
+    // Subsequent auth events: update session/user but DO NOT toggle loading.
+    // Only re-check admin role if the user identity actually changed
+    // (prevents flicker on TOKEN_REFRESHED / tab-focus events).
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       setUser(s?.user ?? null);
-      if (s?.user) {
-        setLoading(true);
-        checkAdmin(s.user.id).finally(() => setLoading(false));
-      } else {
+      const uid = s?.user?.id ?? null;
+      if (!uid) {
         setIsAdmin(false);
-        setLoading(false);
+        checkedUserId.current = null;
+        return;
       }
-    });
-
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) checkAdmin(s.user.id).finally(() => setLoading(false));
-      else setLoading(false);
+      if (uid !== checkedUserId.current) {
+        checkAdmin(uid);
+      }
     });
 
     return () => sub.subscription.unsubscribe();
@@ -71,6 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await supabase.auth.signOut();
       return { error: "Access denied. Admins only." };
     }
+    setIsAdmin(true);
+    checkedUserId.current = data.user!.id;
     return { error: null };
   };
 
