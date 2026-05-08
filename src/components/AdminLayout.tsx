@@ -4,11 +4,16 @@ import {
   LayoutDashboard,
   Users,
   ArrowLeftRight,
+  PlusCircle,
   Wallet,
   Landmark,
+  FileText,
   Send,
+  Globe,
+  Smartphone,
   CreditCard,
   Settings,
+  SlidersHorizontal,
   LogOut,
   Menu,
   Shield,
@@ -23,10 +28,16 @@ const navItems = [
   { to: "/admin", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/admin/users", label: "Users", icon: Users },
   { to: "/admin/transactions", label: "Transactions", icon: ArrowLeftRight },
+  { to: "/admin/create-transaction", label: "Create Transaction", icon: PlusCircle },
   { to: "/admin/deposits", label: "Deposits", icon: Wallet },
   { to: "/admin/loans", label: "Loans", icon: Landmark },
+  { to: "/admin/loan-applications", label: "Loan Applications", icon: FileText },
   { to: "/admin/transfers", label: "Transfers", icon: Send },
+  { to: "/admin/wire-transfers", label: "Wire Transfers", icon: Send },
+  { to: "/admin/international-transfers", label: "International Transfers", icon: Globe },
+  { to: "/admin/digital-payments", label: "Digital Payments", icon: Smartphone },
   { to: "/admin/cards", label: "Edit Cards", icon: CreditCard },
+  { to: "/admin/app-settings", label: "App Settings", icon: SlidersHorizontal },
   { to: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
@@ -47,7 +58,7 @@ export default function AdminLayout() {
   };
 
   const NavList = ({ onNavigate }: { onNavigate?: () => void }) => (
-    <nav className="flex flex-col gap-1 p-3">
+    <nav className="flex flex-col gap-1 overflow-y-auto p-3">
       {navItems.map((item) => (
         <NavLink
           key={item.to}

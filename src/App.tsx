@@ -16,6 +16,10 @@ import Loans from "./pages/admin/Loans";
 import Transfers from "./pages/admin/Transfers";
 import Cards from "./pages/admin/Cards";
 import SettingsPage from "./pages/admin/Settings";
+import LoanApplications from "./pages/admin/LoanApplications";
+import { WireTransfers, InternationalTransfers, DigitalPayments } from "./pages/admin/StatusManager";
+import CreateTransaction from "./pages/admin/CreateTransaction";
+import AppSettings from "./pages/admin/AppSettings";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -43,11 +47,17 @@ const App = () => (
               <Route path="users" element={<Users />} />
               <Route path="users/:id" element={<UserProfile />} />
               <Route path="transactions" element={<Transactions />} />
+              <Route path="create-transaction" element={<CreateTransaction />} />
               <Route path="deposits" element={<Deposits />} />
               <Route path="loans" element={<Loans />} />
+              <Route path="loan-applications" element={<LoanApplications />} />
               <Route path="transfers" element={<Transfers />} />
+              <Route path="wire-transfers" element={<WireTransfers />} />
+              <Route path="international-transfers" element={<InternationalTransfers />} />
+              <Route path="digital-payments" element={<DigitalPayments />} />
               <Route path="cards" element={<Cards />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="app-settings" element={<AppSettings />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
