@@ -8,7 +8,7 @@ export default function Deposits() {
   const [items, setItems] = useState<any[]>([]);
   useEffect(() => {
     supabase
-      .from("deposits")
+      .from("deposit_request")
       .select("*, profiles(first_name,last_name,email,account_number)")
       .order("created_at", { ascending: false })
       .then(({ data }) => setItems(data ?? []));
