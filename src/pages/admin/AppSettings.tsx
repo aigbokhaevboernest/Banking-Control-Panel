@@ -9,11 +9,11 @@ import { toast } from "sonner";
 
 type Settings = {
   id?: string;
-  crypto_wallet_address: string | null;
+  wallet_address: string | null;
   deposits_enabled: boolean;
 };
 
-const DEFAULTS: Settings = { crypto_wallet_address: "", deposits_enabled: true };
+const DEFAULTS: Settings = { wallet_address: "", deposits_enabled: true };
 
 export default function AppSettings() {
   const [s, setS] = useState<Settings>(DEFAULTS);
@@ -35,7 +35,7 @@ export default function AppSettings() {
   const save = async () => {
     setSaving(true);
     const payload: any = {
-      crypto_wallet_address: s.crypto_wallet_address,
+      wallet_address: s.wallet_address,
       deposits_enabled: s.deposits_enabled,
     };
     let error;
@@ -58,8 +58,8 @@ export default function AppSettings() {
       <Card className="space-y-3 p-4">
         <Label>Crypto wallet address</Label>
         <Input
-          value={s.crypto_wallet_address ?? ""}
-          onChange={(e) => setS({ ...s, crypto_wallet_address: e.target.value })}
+          value={s.wallet_address ?? ""}
+          onChange={(e) => setS({ ...s, wallet_address: e.target.value })}
           placeholder="bc1q..."
         />
         <p className="text-xs text-muted-foreground">
