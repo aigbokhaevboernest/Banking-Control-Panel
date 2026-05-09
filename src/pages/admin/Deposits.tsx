@@ -4,18 +4,24 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { fmtDate, fmtMoney, fullName } from "@/lib/format";
 
-export default function Deposits() {
-  const [items, setItems] = useState<any[]>([]);
-  useEffect(() => {
-    supabase
-      .from("deposit_requests")
-      .select("*, profiles(first_name,last_name,email,account_number)")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => setItems(data ?? []));
-  }, []);
+const [items, setItems] = useState<any[]>([]);
+const [error, setError] = useState<string>("");
+
+useEffect(() => {
+  supabase
+    .from("deposit_requests")
+    .select("*, profiles(first_name,last_name,email,account_number)")
+    .order("created_at", { ascending: false })
+    .then(({ data, error }) => {
+      if (error) setError(error.message);
+      setItems(data ?? []);
+    });
+}, []);
+
 
   return (
     <div className="space-y-3">
+      {error && <p className="text-red-500 text-sm p-4">{error}</p>}
       {items.length === 0 && (
         <Card className="p-6 text-center text-sm text-muted-foreground">No deposits</Card>
       )}
