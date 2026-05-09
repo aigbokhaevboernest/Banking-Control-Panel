@@ -9,15 +9,28 @@ export default function Deposits() {
   const [error, setError] = useState<string>("");
 
   useEffect(() => {
-    supabase
-      .from("deposit_requests")
-      .select("*, profiles(first_name,last_name,email,account_number)")
-      .order("created_at", { ascending: false })
-      .then(({ data, error }) => {
-        if (error) setError(error.message);
-        setItems(data ?? []);
-      });
-  }, []);
+  supabase
+    .from("deposit_requests")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .then(async ({ data, error }) => {
+      if (error) { setError(error.message); return; }
+      
+      // Fetch profile for each deposit
+      const withProfiles = await Promise.all(
+        (data ?? []).map(async (d) => {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("first_name, last_name, email, account_number")
+            .eq("id", d.user_id)
+            .single();
+          return { ...d, profiles: profile };
+        })
+      );
+      setItems(withProfiles);
+    });
+}, []);
+
 
   return (
     <div className="space-y-3">
