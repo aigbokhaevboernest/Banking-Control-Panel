@@ -8,7 +8,7 @@ export default function Deposits() {
   const [items, setItems] = useState<any[]>([]);
   useEffect(() => {
     supabase
-      .from("deposit_request")
+      .from("deposit_requests")
       .select("*, profiles(first_name,last_name,email,account_number)")
       .order("created_at", { ascending: false })
       .then(({ data }) => setItems(data ?? []));
@@ -26,7 +26,7 @@ export default function Deposits() {
               <p className="truncate text-sm font-medium">{fullName(d.profiles)}</p>
               <p className="text-xs text-muted-foreground">{d.profiles?.email}</p>
               <p className="text-xs text-muted-foreground">{fmtDate(d.created_at)}</p>
-              <p className="text-xs text-muted-foreground">{d.method ?? "—"}</p>
+              <p className="text-xs text-muted-foreground">{d.crypto ?? "—"}</p>
             </div>
             <div className="text-right">
               <p className="text-base font-bold">{fmtMoney(d.amount)}</p>
