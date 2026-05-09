@@ -10,10 +10,10 @@ import { toast } from "sonner";
 type Settings = {
   id?: string;
   wallet_address: string | null;
-  deposits_enabled: boolean;
+  receive_enabled: boolean;
 };
 
-const DEFAULTS: Settings = { wallet_address: "", deposits_enabled: true };
+const DEFAULTS: Settings = { wallet_address: "", receive_enabled: true };
 
 export default function AppSettings() {
   const [s, setS] = useState<Settings>(DEFAULTS);
@@ -36,7 +36,7 @@ export default function AppSettings() {
     setSaving(true);
     const payload: any = {
       wallet_address: s.wallet_address,
-      deposits_enabled: s.deposits_enabled,
+      receive_enabled: s.receive_enabled,
     };
     let error;
     if (s.id) {
@@ -75,8 +75,8 @@ export default function AppSettings() {
           </p>
         </div>
         <Switch
-          checked={s.deposits_enabled}
-          onCheckedChange={(v) => setS({ ...s, deposits_enabled: v })}
+          checked={s.receive_enabled}
+          onCheckedChange={(v) => setS({ ...s, receive_enabled: v })}
         />
       </Card>
 
