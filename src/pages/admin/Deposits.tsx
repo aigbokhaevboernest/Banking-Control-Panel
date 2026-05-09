@@ -9,28 +9,47 @@ export default function Deposits() {
   const [error, setError] = useState<string>("");
 
   useEffect(() => {
-  supabase
-    .from("deposit_requests")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .then(async ({ data, error }) => {
-      if (error) { setError(error.message); return; }
-      
-      // Fetch profile for each deposit
-      const withProfiles = await Promise.all(
-        (data ?? []).map(async (d) => {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("first_name, last_name, email, account_number")
-            .eq("id", d.user_id)
-            .single();
-          return { ...d, profiles: profile };
-        })
-      );
-      setItems(withProfiles);
-    });
-}, []);
+    supabase
+      .from("deposit_requests")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .then(async ({ data, error }) => {
+        if (error) { setError(error.message); return; }
+        const withProfiles = await Promise.all(
+          (data ?? []).map(async (d) => {
+            const { data: profile } = await supabase
+              .from("profiles")
+              .select("first_name, last_name, email, account_number")
+              .eq("id", d.user_id)
+              .single();
+            return { ...d, profiles: profile };
+          })
+        );
+        setItems(withProfiles);
+      });
+  }, []);
 
+  const handleAction = async (id: string, userId: string, amount: number, status: string) => {
+    await supabase
+      .from("deposit_requests")
+      .update({ status })
+      .eq("id", id);
+
+    if (status === "approved") {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("total_balance")
+        .eq("id", userId)
+        .single();
+
+      await supabase
+        .from("profiles")
+        .update({ total_balance: (profile?.total_balance ?? 0) + amount })
+        .eq("id", userId);
+    }
+
+    setItems(prev => prev.map(d => d.id === id ? { ...d, status } : d));
+  };
 
   return (
     <div className="space-y-3">
@@ -51,6 +70,20 @@ export default function Deposits() {
               <p className="text-base font-bold">{fmtMoney(d.amount)}</p>
               <Badge variant="outline" className="capitalize">{d.status}</Badge>
             </div>
+          </div>
+          <div className="flex gap-2 mt-2 justify-end">
+            <button
+              onClick={() => handleAction(d.id, d.user_id, d.amount, "approved")}
+              className="text-xs bg-green-500 text-white px-3 py-1 rounded-lg"
+            >
+              Approve
+            </button>
+            <button
+              onClick={() => handleAction(d.id, d.user_id, d.amount, "rejected")}
+              className="text-xs bg-red-500 text-white px-3 py-1 rounded-lg"
+            >
+              Decline
+            </button>
           </div>
         </Card>
       ))}
