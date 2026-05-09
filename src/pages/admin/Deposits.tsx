@@ -33,6 +33,3 @@ return (
 </div>
 </Card>
 ))}
-</div>
-);
-}
