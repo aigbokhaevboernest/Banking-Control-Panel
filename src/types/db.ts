@@ -82,7 +82,7 @@ export type Card = {
 export type WithdrawalCode = {
   id: string;
   user_id: string;
-  code_type: "COT" | "IMF" | "TAX" | "ITC";
+  code_type: "COT" | "IMF" | "TAX" | "ITC" | "LOAN";
   code: string;
   enabled: boolean;
   verified: boolean;
