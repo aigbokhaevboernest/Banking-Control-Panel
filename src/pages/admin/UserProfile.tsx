@@ -40,7 +40,7 @@ import {
 import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 
-const CODE_TYPES = ["COT", "IMF", "TAX", "ITC", "LOAN"] as const;
+const CODE_TYPES = ["COT", "IMF", "TAX", "ITC"] as const;
 
 const statusBadge = (s: string) =>
   s === "active"
