@@ -22,13 +22,40 @@ export default function Transfers() {
   useEffect(() => {
     (async () => {
       setLoading(true);
+
       const { data, error } = await supabase
         .from("transactions")
-        .select("*, profiles(first_name,last_name,email,account_number)")
+        .select("*")
         .eq("type", "transfer")
         .order("created_at", { ascending: false });
-      if (error) toast.error(error.message);
-      setItems(data ?? []);
+
+      if (error) {
+        toast.error(error.message);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch profiles separately
+      const userIds = [...new Set((data || []).map((t) => t.user_id).filter(Boolean))];
+
+      const { data: profiles } = userIds.length
+        ? await supabase
+            .from("profiles")
+            .select("id, first_name, last_name, email, account_number")
+            .in("id", userIds)
+        : { data: [] };
+
+      const profileMap = Object.fromEntries(
+        (profiles || []).map((p) => [p.id, p])
+      );
+
+      setItems(
+        (data || []).map((t) => ({
+          ...t,
+          profiles: profileMap[t.user_id] ?? null,
+        }))
+      );
+
       setLoading(false);
     })();
   }, []);
@@ -51,7 +78,11 @@ export default function Transfers() {
   return (
     <div className="space-y-3">
       <Card className="space-y-3 p-3">
-        <Input placeholder="Search user or recipient" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input
+          placeholder="Search user or recipient"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -65,7 +96,9 @@ export default function Transfers() {
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : filtered.length === 0 ? (
-        <Card className="p-6 text-center text-sm text-muted-foreground">No transfers</Card>
+        <Card className="p-6 text-center text-sm text-muted-foreground">
+          No transfers
+        </Card>
       ) : (
         filtered.map((t) => (
           <Card key={t.id} className="p-4">
