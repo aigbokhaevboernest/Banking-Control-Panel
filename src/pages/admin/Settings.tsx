@@ -6,7 +6,7 @@ export default function Settings() {
   return (
     <div className="space-y-4">
       <Card className="p-4">
-        <h3 className="font-semibold"> On banking Admin account</h3>
+        <h3 className="font-semibold"> Online banking Admin account</h3>
         <p className="mt-1 text-sm text-muted-foreground">Signed in as {user?.email}</p>
       </Card>
       <Card className="p-4">
