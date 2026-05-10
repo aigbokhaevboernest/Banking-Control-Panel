@@ -177,27 +177,16 @@ export default function UserProfile() {
             <Field label="Country" value={p.country ?? ""} onSave={(v) => update({ country: v })} />
             <Field label="Currency" value={p.currency ?? ""} onSave={(v) => update({ currency: v })} />
 
-            <div className="space-y-2">
-              <Label>Password (plain text)</Label>
-              <div className="flex gap-2">
-                <Input
-                  type={showPwd ? "text" : "password"}
-                  value={p.plain_password ?? ""}
-                  onChange={(e) => setP({ ...p, plain_password: e.target.value })}
-                />
-                <Button type="button" variant="outline" size="icon" onClick={() => setShowPwd((s) => !s)}>
-                  {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
-              <Button size="sm" onClick={() => update({ plain_password: p.plain_password })}>
-                Save password
-              </Button>
-              {!p.plain_password && (
-                <p className="text-xs text-muted-foreground">
-                  No plain password stored. Add a `plain_password` column on profiles to capture it at signup.
-                </p>
-              )}
-            </div>
+            <PasswordEditor
+              current={p.plain_password ?? ""}
+              show={showPwd}
+              onToggle={() => setShowPwd((s) => !s)}
+              onUpdate={async (next) => {
+                if (!next) { toast.error("Enter a new password"); return; }
+                if (next.length < 6) { toast.error("Password must be at least 6 characters"); return; }
+                await update({ plain_password: next } as any);
+              }}
+            />
           </Card>
 
           <Card className="space-y-2 p-4">
@@ -418,6 +407,69 @@ function Field({
           Save
         </Button>
       </div>
+    </div>
+  );
+}
+
+function PasswordEditor({
+  current,
+  show,
+  onToggle,
+  onUpdate,
+}: {
+  current: string;
+  show: boolean;
+  onToggle: () => void;
+  onUpdate: (next: string) => void | Promise<void>;
+}) {
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+
+  const submit = async () => {
+    if (next !== confirm) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    await onUpdate(next);
+    setNext("");
+    setConfirm("");
+  };
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <Label>User password</Label>
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground">Current</p>
+        <div className="flex gap-2">
+          <Input type={show ? "text" : "password"} value={current} readOnly />
+          <Button type="button" variant="outline" size="icon" onClick={onToggle}>
+            {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </Button>
+        </div>
+        {!current && (
+          <p className="text-xs text-muted-foreground">No password stored yet.</p>
+        )}
+      </div>
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground">New password</p>
+        <Input
+          type={show ? "text" : "password"}
+          value={next}
+          placeholder="At least 6 characters"
+          onChange={(e) => setNext(e.target.value)}
+        />
+      </div>
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground">Confirm new password</p>
+        <Input
+          type={show ? "text" : "password"}
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+        />
+      </div>
+      <Button size="sm" className="w-full" onClick={submit} disabled={!next || !confirm}>
+        Update password
+      </Button>
     </div>
   );
 }
