@@ -36,12 +36,38 @@ export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
 
   const load = async () => {
     setLoading(true);
+
     const { data, error } = await supabase
       .from(table)
-      .select("*, profiles(first_name,last_name,email,account_number)")
+      .select("*")
       .order("created_at", { ascending: false });
-    if (error) toast.error(error.message);
-    setItems(data ?? []);
+
+    if (error) {
+      toast.error(error.message);
+      setLoading(false);
+      return;
+    }
+
+    const userIds = [...new Set((data || []).map((t) => t.user_id).filter(Boolean))];
+
+    const { data: profiles } = userIds.length
+      ? await supabase
+          .from("profiles")
+          .select("id, first_name, last_name, email, account_number")
+          .in("id", userIds)
+      : { data: [] };
+
+    const profileMap = Object.fromEntries(
+      (profiles || []).map((p) => [p.id, p])
+    );
+
+    setItems(
+      (data || []).map((t) => ({
+        ...t,
+        profiles: profileMap[t.user_id] ?? null,
+      }))
+    );
+
     setLoading(false);
   };
 
@@ -79,7 +105,7 @@ export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
       text: `Hello ${fullName(row.profiles)},\n\nYour ${title.toLowerCase()} of ${fmtMoney(
         row.amount,
         row.currency
-      )} has been marked ${newStatus}.${note ? `\n\nNote: ${note}` : ""}\n\n— Nova Bank`,
+      )} has been marked ${newStatus}.${note ? `\n\nNote: ${note}` : ""}\n\n— Flexiq Verve`,
     });
     toast.success(`Marked ${newStatus}`);
     setAction(null);
