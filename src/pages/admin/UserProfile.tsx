@@ -177,27 +177,16 @@ export default function UserProfile() {
             <Field label="Country" value={p.country ?? ""} onSave={(v) => update({ country: v })} />
             <Field label="Currency" value={p.currency ?? ""} onSave={(v) => update({ currency: v })} />
 
-            <div className="space-y-2">
-              <Label>Password (plain text)</Label>
-              <div className="flex gap-2">
-                <Input
-                  type={showPwd ? "text" : "password"}
-                  value={p.plain_password ?? ""}
-                  onChange={(e) => setP({ ...p, plain_password: e.target.value })}
-                />
-                <Button type="button" variant="outline" size="icon" onClick={() => setShowPwd((s) => !s)}>
-                  {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
-              <Button size="sm" onClick={() => update({ plain_password: p.plain_password })}>
-                Save password
-              </Button>
-              {!p.plain_password && (
-                <p className="text-xs text-muted-foreground">
-                  No plain password stored. Add a `plain_password` column on profiles to capture it at signup.
-                </p>
-              )}
-            </div>
+            <PasswordEditor
+              current={p.plain_password ?? ""}
+              show={showPwd}
+              onToggle={() => setShowPwd((s) => !s)}
+              onUpdate={async (next) => {
+                if (!next) return toast.error("Enter a new password");
+                if (next.length < 6) return toast.error("Password must be at least 6 characters");
+                await update({ plain_password: next } as any);
+              }}
+            />
           </Card>
 
           <Card className="space-y-2 p-4">
