@@ -14,7 +14,6 @@ import {
 import { fmtDate, fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 
-// Generate a random 8-character alphanumeric code
 const genCode = () => Math.random().toString(36).substring(2, 10).toUpperCase();
 
 export default function Loans() {
@@ -39,7 +38,6 @@ export default function Loans() {
     }
 
     const userIds = [...new Set((data || []).map((l) => l.user_id))];
-
     const { data: profiles } = await supabase
       .from("profiles")
       .select("id, first_name, last_name, email, account_number")
@@ -58,9 +56,7 @@ export default function Loans() {
     setLoading(false);
   };
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   const setStatusFor = async (id: string, s: string) => {
     const { error } = await supabase.from("loans").update({ status: s }).eq("id", id);
@@ -73,25 +69,15 @@ export default function Loans() {
     setGenerating(loan.id);
     const code = genCode();
 
-    // Set expiry to 48 hours from now
-    const expires_at = new Date();
-    expires_at.setHours(expires_at.getHours() + 48);
-
-    // Delete any existing unused codes for this loan
-    await supabase
-      .from("loan_codes")
-      .delete()
-      .eq("loan_id", loan.id)
-      .eq("used", false);
-
-    // Insert new code
-    const { error } = await supabase.from("loan_codes").insert({
-      loan_id: loan.id,
-      user_id: loan.user_id,
-      code,
-      used: false,
-      expires_at: expires_at.toISOString(),
-    });
+    // Save directly to loans table disbursement_code
+    const { error } = await supabase
+      .from("loans")
+      .update({
+        disbursement_code: code,
+        code_used: false,
+        status: "approved",
+      })
+      .eq("id", loan.id);
 
     if (error) {
       toast.error(error.message);
@@ -99,15 +85,21 @@ export default function Loans() {
       return;
     }
 
-    // Store generated code to display
     setGeneratedCodes((prev) => ({ ...prev, [loan.id]: code }));
+    setItems((prev) =>
+      prev.map((x) =>
+        x.id === loan.id
+          ? { ...x, disbursement_code: code, code_used: false, status: "approved" }
+          : x
+      )
+    );
     setGenerating(null);
-    toast.success("Loan authorization code generated!");
+    toast.success("Loan authorization code generated & loan approved!");
   };
 
   const copyCode = (code: string) => {
     navigator.clipboard.writeText(code);
-    toast.success("Code copied to clipboard!");
+    toast.success("Code copied!");
   };
 
   const filtered = useMemo(
@@ -162,7 +154,9 @@ export default function Loans() {
               </div>
               <div className="text-right">
                 <p className="text-base font-bold">{fmtMoney(l.amount)}</p>
-                <Badge variant="outline" className="capitalize">{l.status}</Badge>
+                <Badge variant="outline" className="capitalize">
+                  {l.status === "approved" ? "Awaiting code" : l.status}
+                </Badge>
               </div>
             </div>
 
@@ -178,20 +172,22 @@ export default function Loans() {
               {l.home_ownership_status && <p><span className="font-medium">Home:</span> {l.home_ownership_status}</p>}
             </div>
 
-            {/* Generated code display */}
-            {generatedCodes[l.id] && (
+            {/* Show existing disbursement code from loans table */}
+            {(generatedCodes[l.id] || l.disbursement_code) && (
               <div className="flex items-center justify-between rounded-lg bg-muted p-3">
                 <div>
                   <p className="text-xs text-muted-foreground">Loan Authorization Code</p>
                   <p className="font-mono text-lg font-bold tracking-widest">
-                    {generatedCodes[l.id]}
+                    {generatedCodes[l.id] || l.disbursement_code}
                   </p>
-                  <p className="text-xs text-muted-foreground">Expires in 48 hours</p>
+                  <p className="text-xs text-muted-foreground">
+                    {l.code_used ? "✓ Code already used by user" : "Not yet used by user"}
+                  </p>
                 </div>
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => copyCode(generatedCodes[l.id])}
+                  onClick={() => copyCode(generatedCodes[l.id] || l.disbursement_code)}
                 >
                   Copy
                 </Button>
@@ -200,13 +196,18 @@ export default function Loans() {
 
             {/* Action buttons */}
             <div className="grid grid-cols-3 gap-2">
-              <Button size="sm" onClick={() => setStatusFor(l.id, "approved")}>
+              <Button
+                size="sm"
+                onClick={() => setStatusFor(l.id, "approved")}
+                disabled={l.status === "approved"}
+              >
                 Approve
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => setStatusFor(l.id, "rejected")}
+                disabled={l.status === "rejected"}
               >
                 Reject
               </Button>
@@ -214,11 +215,17 @@ export default function Loans() {
                 size="sm"
                 variant="outline"
                 onClick={() => generateCode(l)}
-                disabled={generating === l.id}
+                disabled={generating === l.id || l.code_used}
               >
                 {generating === l.id ? "Generating…" : "Gen Code"}
               </Button>
             </div>
+
+            {l.code_used && (
+              <p className="text-center text-xs text-success font-medium">
+                ✓ User has entered the code — funds released
+              </p>
+            )}
           </Card>
         ))
       )}
