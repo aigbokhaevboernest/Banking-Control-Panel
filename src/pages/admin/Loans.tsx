@@ -23,12 +23,35 @@ export default function Loans() {
   const load = async () => {
     setLoading(true);
     const { data, error } = await supabase
-      .from("loans")
-      .select("*, profiles(first_name,last_name,email,account_number)")
-      .order("created_at", { ascending: false });
-    if (error) toast.error(error.message);
-    setItems(data ?? []);
-    setLoading(false);
+  .from("loans")
+  .select("*")
+  .order("created_at", { ascending: false });
+
+if (error) {
+  toast.error(error.message);
+  setLoading(false);
+  return;
+}
+
+const userIds = [...new Set((data || []).map((l) => l.user_id))];
+
+const { data: profiles } = await supabase
+  .from("profiles")
+  .select("id, first_name, last_name, email, account_number")
+  .in("id", userIds);
+
+const profileMap = Object.fromEntries(
+  (profiles || []).map((p) => [p.id, p])
+);
+
+setItems(
+  (data || []).map((l) => ({
+    ...l,
+    profiles: profileMap[l.user_id] ?? null,
+  }))
+);
+setLoading(false);
+
   };
 
   useEffect(() => {
