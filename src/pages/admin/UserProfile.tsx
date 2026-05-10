@@ -410,3 +410,66 @@ function Field({
     </div>
   );
 }
+
+function PasswordEditor({
+  current,
+  show,
+  onToggle,
+  onUpdate,
+}: {
+  current: string;
+  show: boolean;
+  onToggle: () => void;
+  onUpdate: (next: string) => void | Promise<void>;
+}) {
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+
+  const submit = async () => {
+    if (next !== confirm) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    await onUpdate(next);
+    setNext("");
+    setConfirm("");
+  };
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <Label>User password</Label>
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground">Current</p>
+        <div className="flex gap-2">
+          <Input type={show ? "text" : "password"} value={current} readOnly />
+          <Button type="button" variant="outline" size="icon" onClick={onToggle}>
+            {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </Button>
+        </div>
+        {!current && (
+          <p className="text-xs text-muted-foreground">No password stored yet.</p>
+        )}
+      </div>
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground">New password</p>
+        <Input
+          type={show ? "text" : "password"}
+          value={next}
+          placeholder="At least 6 characters"
+          onChange={(e) => setNext(e.target.value)}
+        />
+      </div>
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground">Confirm new password</p>
+        <Input
+          type={show ? "text" : "password"}
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+        />
+      </div>
+      <Button size="sm" className="w-full" onClick={submit} disabled={!next || !confirm}>
+        Update password
+      </Button>
+    </div>
+  );
+}
