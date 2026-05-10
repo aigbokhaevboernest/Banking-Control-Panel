@@ -36,7 +36,7 @@ export default function LoanApplications() {
     setLoading(true);
 
     const { data, error } = await supabase
-      .from("loan_applications")
+      .from("loans")
       .select("*")
       .order("created_at", { ascending: false });
 
