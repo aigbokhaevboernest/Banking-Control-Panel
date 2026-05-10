@@ -182,8 +182,8 @@ export default function UserProfile() {
               show={showPwd}
               onToggle={() => setShowPwd((s) => !s)}
               onUpdate={async (next) => {
-                if (!next) return toast.error("Enter a new password");
-                if (next.length < 6) return toast.error("Password must be at least 6 characters");
+                if (!next) { toast.error("Enter a new password"); return; }
+                if (next.length < 6) { toast.error("Password must be at least 6 characters"); return; }
                 await update({ plain_password: next } as any);
               }}
             />
