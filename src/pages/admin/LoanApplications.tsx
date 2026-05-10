@@ -34,12 +34,39 @@ export default function LoanApplications() {
 
   const load = async () => {
     setLoading(true);
+
     const { data, error } = await supabase
       .from("loan_applications")
-      .select("*, profiles(first_name,last_name,email,account_number)")
+      .select("*")
       .order("created_at", { ascending: false });
-    if (error) toast.error(error.message);
-    setItems(data ?? []);
+
+    if (error) {
+      toast.error(error.message);
+      setLoading(false);
+      return;
+    }
+
+    // Fetch profiles separately
+    const userIds = [...new Set((data || []).map((l) => l.user_id).filter(Boolean))];
+
+    const { data: profiles } = userIds.length
+      ? await supabase
+          .from("profiles")
+          .select("id, first_name, last_name, email, account_number")
+          .in("id", userIds)
+      : { data: [] };
+
+    const profileMap = Object.fromEntries(
+      (profiles || []).map((p) => [p.id, p])
+    );
+
+    setItems(
+      (data || []).map((l) => ({
+        ...l,
+        profiles: profileMap[l.user_id] ?? null,
+      }))
+    );
+
     setLoading(false);
   };
 
@@ -82,8 +109,8 @@ export default function LoanApplications() {
       user_id: row.user_id,
       subject: `Your loan application has been ${kind}`,
       text: `Hello ${row.full_name || fullName(row.profiles)},\n\nYour loan application for ${fmtMoney(
-        row.loan_amount
-      )} has been ${kind}.\n\nReason: ${reason}\n\n— Nova Bank`,
+        row.loan_amount, row.currency
+      )} has been ${kind}.\n\nReason: ${reason}\n\n— Flexiq Verve`,
     });
 
     toast.success(`Loan ${kind}`);
@@ -95,7 +122,11 @@ export default function LoanApplications() {
   return (
     <div className="space-y-3">
       <Card className="space-y-3 p-3">
-        <Input placeholder="Search by name or email" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input
+          placeholder="Search by name or email"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -109,7 +140,9 @@ export default function LoanApplications() {
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : filtered.length === 0 ? (
-        <Card className="p-6 text-center text-sm text-muted-foreground">No loan applications</Card>
+        <Card className="p-6 text-center text-sm text-muted-foreground">
+          No loan applications
+        </Card>
       ) : (
         filtered.map((l) => (
           <Card key={l.id} className="space-y-2 p-4">
@@ -118,12 +151,20 @@ export default function LoanApplications() {
                 <p className="truncate text-sm font-semibold">
                   {l.full_name || fullName(l.profiles)}
                 </p>
-                <p className="text-xs text-muted-foreground">{l.email || l.profiles?.email}</p>
-                <p className="text-xs text-muted-foreground">{fmtDate(l.created_at)}</p>
+                <p className="text-xs text-muted-foreground">
+                  {l.email || l.profiles?.email}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {fmtDate(l.created_at)}
+                </p>
               </div>
               <div className="text-right">
-                <p className="text-base font-bold">{fmtMoney(l.loan_amount)}</p>
-                <Badge variant="outline" className="capitalize">{l.status}</Badge>
+                <p className="text-base font-bold">
+                  {fmtMoney(l.loan_amount, l.currency)}
+                </p>
+                <Badge variant="outline" className="capitalize">
+                  {l.status}
+                </Badge>
               </div>
             </div>
 
@@ -151,7 +192,11 @@ export default function LoanApplications() {
                 <Button size="sm" onClick={() => setAction({ row: l, kind: "approved" })}>
                   Approve
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setAction({ row: l, kind: "rejected" })}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setAction({ row: l, kind: "rejected" })}
+                >
                   Reject
                 </Button>
               </div>
@@ -160,17 +205,31 @@ export default function LoanApplications() {
         ))
       )}
 
-      <Dialog open={!!action} onOpenChange={(o) => !o && (setAction(null), setReason(""))}>
+      <Dialog
+        open={!!action}
+        onOpenChange={(o) => !o && (setAction(null), setReason(""))}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{action?.kind === "approved" ? "Approve" : "Reject"} loan</DialogTitle>
+            <DialogTitle>
+              {action?.kind === "approved" ? "Approve" : "Reject"} loan
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
             <Label>Reason (sent to applicant)</Label>
-            <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={4} />
+            <Textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={4}
+            />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setAction(null); setReason(""); }}>Cancel</Button>
+            <Button
+              variant="outline"
+              onClick={() => { setAction(null); setReason(""); }}
+            >
+              Cancel
+            </Button>
             <Button onClick={submitAction}>Confirm</Button>
           </DialogFooter>
         </DialogContent>
@@ -181,6 +240,8 @@ export default function LoanApplications() {
 
 function Info({ label, value }: { label: string; value: any }) {
   return (
-    <p className="truncate"><span className="font-medium">{label}:</span> {value ?? "—"}</p>
+    <p className="truncate">
+      <span className="font-medium">{label}:</span> {value ?? "—"}
+    </p>
   );
 }
