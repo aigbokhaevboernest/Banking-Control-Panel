@@ -147,7 +147,7 @@ export default function Transactions() {
               <SelectValue placeholder="Type" />
             </SelectTrigger>
             <SelectContent>
-              {["all", "deposit", "withdrawal", "transfer", "loan"].map(
+              {["all", "deposit", "withdrawal", "transfer", "loan", "wire", "local", "digital"].map(
                 (s) => (
                   <SelectItem key={s} value={s}>
                     {s}
@@ -212,21 +212,21 @@ export default function Transactions() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setStatusFor(t.id, "completed")}
+                onClick={() => setStatusFor(t, "completed")}
               >
                 Approve
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setStatusFor(t.id, "failed")}
+                onClick={() => setStatusFor(t, "failed")}
               >
                 Reject
-      </Button>
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setStatusFor(t.id, "pending")}
+                onClick={() => setStatusFor(t, "pending")}
               >
                 Pending
               </Button>
