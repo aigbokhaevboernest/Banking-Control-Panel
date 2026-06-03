@@ -17,25 +17,25 @@ import { toast } from "sonner";
 type Asset = "BTC" | "ETH" | "USDT";
 
 const ASSET_FIELD: Record<Asset, string> = {
-  BTC: "btc_address",
-  ETH: "eth_address",
-  USDT: "usdt_address",
+  BTC: "btc_wallet_address",
+  ETH: "eth_wallet_address",
+  USDT: "usdt_wallet_address",
 };
 
 type Settings = {
   id?: string;
   wallet_address?: string | null;
-  btc_address?: string | null;
-  eth_address?: string | null;
-  usdt_address?: string | null;
+  btc_wallet_address?: string | null;
+  eth_wallet_address?: string | null;
+  usdt_wallet_address?: string | null;
   receive_enabled: boolean;
 };
 
 const DEFAULTS: Settings = {
   wallet_address: "",
-  btc_address: "",
-  eth_address: "",
-  usdt_address: "",
+  btc_wallet_address: "",
+  eth_wallet_address: "",
+  usdt_wallet_address: "",
   receive_enabled: true,
 };
 
@@ -65,9 +65,9 @@ export default function AppSettings() {
   const save = async () => {
     setSaving(true);
     const payload: any = {
-      btc_address: s.btc_address ?? null,
-      eth_address: s.eth_address ?? null,
-      usdt_address: s.usdt_address ?? null,
+      btc_wallet_address: s.btc_wallet_address ?? null,
+      eth_wallet_address: s.eth_wallet_address ?? null,
+      usdt_Wallet_address: s.usdt_wallet_address ?? null,
       receive_enabled: s.receive_enabled,
     };
     let error;
