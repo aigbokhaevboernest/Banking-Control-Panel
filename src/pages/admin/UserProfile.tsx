@@ -177,6 +177,13 @@ export default function UserProfile() {
             <Field label="Country" value={p.country ?? ""} onSave={(v) => update({ country: v })} />
             <Field label="Currency" value={p.currency ?? ""} onSave={(v) => update({ currency: v })} />
 
+            <PinDisplay pin={(p as any).pin ?? (p as any).account_pin ?? ""} />
+
+            <CreatedAtEditor
+              value={p.created_at}
+              onSave={(iso) => update({ created_at: iso } as any)}
+            />
+
             <PasswordEditor
               current={p.plain_password ?? ""}
               show={showPwd}
