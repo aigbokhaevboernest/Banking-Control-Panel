@@ -59,7 +59,7 @@ export default function CreateTransaction() {
 
   // Load users
   useEffect(() => {
-  supabaseAdmin
+  supabase
     .from("profiles")
     .select("id,first_name,last_name,email,account_number,balance,currency")
     .order("created_at", { ascending: false })
