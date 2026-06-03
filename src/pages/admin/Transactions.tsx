@@ -28,32 +28,51 @@ export default function Transactions() {
   const load = async () => {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("transactions")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(500);
+    const tables = [
+      { name: "transactions", type: null as string | null },
+      { name: "wire_transfers", type: "wire" },
+      { name: "local_transfers", type: "local" },
+      { name: "digital_payments", type: "digital" },
+    ];
 
-    if (error) {
-      toast.error(error.message);
-      setLoading(false);
-      return;
+    const results: any[] = [];
+    for (const t of tables) {
+      const { data, error } = await supabase
+        .from(t.name)
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (error) continue;
+      for (const r of (data || []) as any[]) {
+        results.push({
+          ...r,
+          id: `${t.name}:${r.id}`,
+          _table: t.name,
+          _raw_id: r.id,
+          type: r.type || t.type,
+          recipient: r.recipient || r.recipient_name || null,
+        });
+      }
     }
 
     // Fetch profiles separately to avoid foreign key relationship issues
-    const userIds = [...new Set((data || []).map((t) => t.user_id))];
+    const userIds = [...new Set(results.map((r) => r.user_id).filter(Boolean))];
 
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, first_name, last_name, email, account_number")
-      .in("id", userIds);
+    const { data: profiles } = userIds.length
+      ? await supabase
+          .from("profiles")
+          .select("id, first_name, last_name, email, account_number")
+          .in("id", userIds)
+      : { data: [] };
 
     const profileMap = Object.fromEntries(
       (profiles || []).map((p) => [p.id, p])
     );
 
+    results.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+
     setItems(
-      (data || []).map((t) => ({
+      results.map((t) => ({
         ...t,
         profiles: profileMap[t.user_id] ?? null,
       }))
@@ -66,15 +85,15 @@ export default function Transactions() {
     load();
   }, []);
 
-  const setStatusFor = async (id: string, s: string) => {
+  const setStatusFor = async (row: any, s: string) => {
     const { error } = await supabase
-      .from("transactions")
+      .from(row._table)
       .update({ status: s })
-      .eq("id", id);
+      .eq("id", row._raw_id);
     if (error) return toast.error(error.message);
     toast.success(`Marked ${s}`);
     setItems((prev) =>
-      prev.map((x) => (x.id === id ? { ...x, status: s } : x))
+      prev.map((x) => (x.id === row.id ? { ...x, status: s } : x))
     );
   };
 
