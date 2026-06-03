@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { supabase, supabaseAdmin } from "@/lib/supabase"; 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
