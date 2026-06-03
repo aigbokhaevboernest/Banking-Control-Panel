@@ -36,6 +36,7 @@ import {
   ShieldCheck,
   ShieldX,
   Flag,
+  Save,
 } from "lucide-react";
 import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
@@ -49,30 +50,68 @@ const statusBadge = (s: string) =>
     ? "bg-destructive/15 text-destructive border-destructive/30"
     : "bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))] border-[hsl(var(--warning))]/30";
 
+function Row({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex justify-between border-b border-border/50 py-2 last:border-0">
+      <span className="text-muted-foreground text-sm">{label}</span>
+      <span className="font-medium text-sm text-right break-all">{value || "—"}</span>
+    </div>
+  );
+}
+
 export default function UserProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [p, setP] = useState<Profile | null>(null);
   const [codes, setCodes] = useState<WithdrawalCode[]>([]);
+  const [verification, setVerification] = useState<any>(null);
   const [showPwd, setShowPwd] = useState(false);
   const [delta, setDelta] = useState("");
   const [newCode, setNewCode] = useState({ type: "COT" as (typeof CODE_TYPES)[number], code: "" });
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
+
+  // Single form state for all profile fields
+  const [form, setForm] = useState({
+    first_name: "",
+    last_name: "",
+    email: "",
+    phone: "",
+    address: "",
+    country: "",
+    currency: "",
+    created_at: "",
+  });
+  const [formDirty, setFormDirty] = useState(false);
 
   const load = async () => {
     if (!id) return;
-    const [{ data: prof }, { data: cs }] = await Promise.all([
+    const [{ data: prof }, { data: cs }, { data: verif }] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", id).maybeSingle(),
       supabase.from("withdrawal_codes").select("*").eq("user_id", id),
+      supabase.from("id_verifications").select("*").eq("user_id", id).maybeSingle(),
     ]);
-    setP(prof as Profile | null);
+    const profile = prof as Profile | null;
+    setP(profile);
     setCodes((cs as WithdrawalCode[]) ?? []);
+    setVerification(verif);
+    if (profile) {
+      setForm({
+        first_name: profile.first_name ?? "",
+        last_name: profile.last_name ?? "",
+        email: profile.email ?? "",
+        phone: profile.phone ?? "",
+        address: profile.address ?? "",
+        country: profile.country ?? "",
+        currency: profile.currency ?? "",
+        created_at: profile.created_at ?? "",
+      });
+      setFormDirty(false);
+    }
   };
 
-  useEffect(() => {
-    load();
-  }, [id]);
+  useEffect(() => { load(); }, [id]);
 
   if (!p) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
@@ -85,15 +124,42 @@ export default function UserProfile() {
     }
   };
 
+  const handleFormChange = (field: string, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    setFormDirty(true);
+  };
+
+  const saveAllProfileFields = async () => {
+    const patch: any = {
+      first_name: form.first_name,
+      last_name: form.last_name,
+      email: form.email,
+      phone: form.phone,
+      address: form.address,
+      country: form.country,
+      currency: form.currency,
+      created_at: form.created_at
+        ? new Date(form.created_at).toISOString()
+        : p.created_at,
+    };
+    const { error } = await supabase.from("profiles").update(patch).eq("id", p.id);
+    if (error) toast.error(error.message);
+    else {
+      setP({ ...p, ...patch });
+      setFormDirty(false);
+      toast.success("Profile saved");
+    }
+  };
+
   const adjustBalance = async (sign: 1 | -1) => {
     const v = Number(delta);
     if (!v || isNaN(v)) return toast.error("Enter an amount");
-    const next = Number(p.balance ?? p.balance ?? 0) + sign * v;
+    const next = Number(p.balance ?? 0) + sign * v;
     await update({ balance: next } as any);
     setDelta("");
   };
 
-  const setKyc = (kyc_status: string) => update({ kyc_status });
+  const setKyc = async (kyc_status: string) => update({ kyc_status });
 
   const addCode = async () => {
     if (!newCode.code) return toast.error("Enter a code");
@@ -132,7 +198,14 @@ export default function UserProfile() {
     load();
   };
 
-  const balance = p.balance ?? p.balance ?? 0;
+  const toDatetimeLocal = (iso: string) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const balance = p.balance ?? 0;
 
   return (
     <div className="space-y-4">
@@ -167,23 +240,91 @@ export default function UserProfile() {
           <TabsTrigger value="codes" className="flex-1">Codes</TabsTrigger>
         </TabsList>
 
+        {/* ── PROFILE TAB ── */}
         <TabsContent value="profile" className="space-y-3">
-          <Card className="space-y-3 p-4">
-            <Field label="First name" value={p.first_name ?? ""} onSave={(v) => update({ first_name: v })} />
-            <Field label="Last name" value={p.last_name ?? ""} onSave={(v) => update({ last_name: v })} />
-            <Field label="Email" value={p.email ?? ""} onSave={(v) => update({ email: v })} />
-            <Field label="Phone" value={p.phone ?? ""} onSave={(v) => update({ phone: v })} />
-            <Field label="Address" value={p.address ?? ""} onSave={(v) => update({ address: v })} />
-            <Field label="Country" value={p.country ?? ""} onSave={(v) => update({ country: v })} />
-            <Field label="Currency" value={p.currency ?? ""} onSave={(v) => update({ currency: v })} />
+          <Card className="space-y-4 p-4">
 
+            <div className="space-y-1.5">
+              <Label>First name</Label>
+              <Input
+                value={form.first_name}
+                onChange={(e) => handleFormChange("first_name", e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Last name</Label>
+              <Input
+                value={form.last_name}
+                onChange={(e) => handleFormChange("last_name", e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Email</Label>
+              <Input
+                value={form.email}
+                onChange={(e) => handleFormChange("email", e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Phone</Label>
+              <Input
+                value={form.phone}
+                onChange={(e) => handleFormChange("phone", e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Address</Label>
+              <Input
+                value={form.address}
+                onChange={(e) => handleFormChange("address", e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Country</Label>
+              <Input
+                value={form.country}
+                onChange={(e) => handleFormChange("country", e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Currency</Label>
+              <Input
+                value={form.currency}
+                onChange={(e) => handleFormChange("currency", e.target.value)}
+              />
+            </div>
+
+            {/* PIN — read only */}
             <PinDisplay pin={(p as any).pin ?? (p as any).account_pin ?? ""} />
 
-            <CreatedAtEditor
-              value={p.created_at}
-              onSave={(iso) => update({ created_at: iso } as any)}
-            />
+            <div className="space-y-1.5">
+              <Label>Account created at</Label>
+              <Input
+                type="datetime-local"
+                value={toDatetimeLocal(form.created_at)}
+                onChange={(e) => handleFormChange("created_at", e.target.value)}
+              />
+            </div>
 
+            {/* ONE save button for all fields above */}
+            <Button
+              className="w-full"
+              size="lg"
+              disabled={!formDirty}
+              onClick={saveAllProfileFields}
+            >
+              <Save className="mr-2 h-4 w-4" /> Save all changes
+            </Button>
+          </Card>
+
+          {/* Password separate — intentional separate action */}
+          <Card className="p-4">
             <PasswordEditor
               current={p.plain_password ?? ""}
               show={showPwd}
@@ -196,6 +337,7 @@ export default function UserProfile() {
             />
           </Card>
 
+          {/* Account status */}
           <Card className="space-y-2 p-4">
             <Label>Account status</Label>
             <div className="grid grid-cols-2 gap-2">
@@ -240,6 +382,7 @@ export default function UserProfile() {
           </Card>
         </TabsContent>
 
+        {/* ── BALANCE TAB ── */}
         <TabsContent value="balance">
           <Card className="space-y-3 p-4">
             <Label>Adjust balance ({fmtMoney(balance, p.currency || "USD")})</Label>
@@ -260,7 +403,8 @@ export default function UserProfile() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="kyc">
+        {/* ── KYC TAB ── */}
+        <TabsContent value="kyc" className="space-y-3">
           <Card className="space-y-3 p-4">
             <Label>KYC status</Label>
             <p className="text-xs text-muted-foreground">Current: {p.kyc_status}</p>
@@ -276,8 +420,122 @@ export default function UserProfile() {
               </Button>
             </div>
           </Card>
+
+          {verification ? (
+            <Card className="space-y-3 p-4">
+              <Label>Submitted Identity Document</Label>
+              <div className="space-y-1">
+                <Row label="Status" value={verification.status} />
+                <Row
+                  label="Legal name"
+                  value={[
+                    verification.legal_first_name,
+                    verification.legal_middle_name,
+                    verification.legal_last_name,
+                  ].filter(Boolean).join(" ")}
+                />
+                <Row label="Date of birth" value={verification.date_of_birth} />
+                <Row label="Document type" value={verification.document_type} />
+                <Row label="Document number" value={verification.document_number} />
+                <Row label="Document country" value={verification.document_country} />
+                <Row
+                  label="Submitted"
+                  value={verification.submitted_at
+                    ? new Date(verification.submitted_at).toLocaleString()
+                    : null}
+                />
+                <Row
+                  label="Reviewed"
+                  value={verification.reviewed_at
+                    ? new Date(verification.reviewed_at).toLocaleString()
+                    : null}
+                />
+                {verification.rejection_reason && (
+                  <Row label="Rejection reason" value={verification.rejection_reason} />
+                )}
+              </div>
+
+              {verification.document_front_url && (
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Document front</Label>
+                  <img
+                    src={verification.document_front_url}
+                    className="rounded-md border max-h-48 object-contain w-full"
+                  />
+                </div>
+              )}
+              {verification.document_back_url && (
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Document back</Label>
+                  <img
+                    src={verification.document_back_url}
+                    className="rounded-md border max-h-48 object-contain w-full"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-2 pt-2 border-t border-border">
+                <Label>Rejection reason (optional)</Label>
+                <Input
+                  placeholder="e.g. Document unclear or expired"
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      const { error } = await supabase
+                        .from("id_verifications")
+                        .update({
+                          status: "approved",
+                          reviewed_at: new Date().toISOString(),
+                          rejection_reason: null,
+                        })
+                        .eq("user_id", p.id);
+                      if (error) return toast.error(error.message);
+                      await setKyc("approved");
+                      setRejectionReason("");
+                      load();
+                      toast.success("Verification approved");
+                    }}
+                  >
+                    <ShieldCheck className="mr-1 h-4 w-4" /> Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={async () => {
+                      const { error } = await supabase
+                        .from("id_verifications")
+                        .update({
+                          status: "rejected",
+                          reviewed_at: new Date().toISOString(),
+                          rejection_reason: rejectionReason || null,
+                        })
+                        .eq("user_id", p.id);
+                      if (error) return toast.error(error.message);
+                      await setKyc("rejected");
+                      setRejectionReason("");
+                      load();
+                      toast.success("Verification rejected");
+                    }}
+                  >
+                    <ShieldX className="mr-1 h-4 w-4" /> Reject
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ) : (
+            <Card className="p-4">
+              <p className="text-sm text-muted-foreground">
+                No identity verification submitted yet.
+              </p>
+            </Card>
+          )}
         </TabsContent>
 
+        {/* ── CODES TAB ── */}
         <TabsContent value="codes" className="space-y-3">
           <Card className="space-y-3 p-4">
             <Label>Default verification code (COT fallback)</Label>
@@ -291,7 +549,10 @@ export default function UserProfile() {
           <Card className="space-y-3 p-4">
             <Label>Add / update code</Label>
             <div className="flex gap-2">
-              <Select value={newCode.type} onValueChange={(v) => setNewCode({ ...newCode, type: v as any })}>
+              <Select
+                value={newCode.type}
+                onValueChange={(v) => setNewCode({ ...newCode, type: v as any })}
+              >
                 <SelectTrigger className="w-28">
                   <SelectValue />
                 </SelectTrigger>
@@ -319,7 +580,9 @@ export default function UserProfile() {
                     <Input
                       defaultValue={c.code}
                       className="h-8 w-32"
-                      onBlur={(e) => e.target.value !== c.code && updateCodeValue(c, e.target.value)}
+                      onBlur={(e) =>
+                        e.target.value !== c.code && updateCodeValue(c, e.target.value)
+                      }
                     />
                   </div>
                   <div className="flex items-center gap-2">
@@ -347,6 +610,7 @@ export default function UserProfile() {
         </TabsContent>
       </Tabs>
 
+      {/* Status change dialog */}
       <AlertDialog open={!!pendingStatus} onOpenChange={(o) => !o && setPendingStatus(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -369,6 +633,7 @@ export default function UserProfile() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Delete dialog */}
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -424,31 +689,14 @@ function PinDisplay({ pin }: { pin: string }) {
     <div className="space-y-1.5">
       <Label>Account PIN</Label>
       <div className="flex gap-2">
-        <Input type={show ? "text" : "password"} value={pin || ""} readOnly placeholder="No PIN set" />
+        <Input
+          type={show ? "text" : "password"}
+          value={pin || ""}
+          readOnly
+          placeholder="No PIN set"
+        />
         <Button type="button" variant="outline" size="icon" onClick={() => setShow((s) => !s)}>
           {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function toLocalInput(iso: string) {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function CreatedAtEditor({ value, onSave }: { value: string; onSave: (iso: string) => void }) {
-  const [v, setV] = useState(toLocalInput(value));
-  useEffect(() => setV(toLocalInput(value)), [value]);
-  return (
-    <div className="space-y-1.5">
-      <Label>Account created at</Label>
-      <div className="flex gap-2">
-        <Input type="datetime-local" value={v} onChange={(e) => setV(e.target.value)} />
-        <Button size="sm" onClick={() => onSave(new Date(v).toISOString())} disabled={v === toLocalInput(value)}>
-          Save
         </Button>
       </div>
     </div>
@@ -470,10 +718,7 @@ function PasswordEditor({
   const [confirm, setConfirm] = useState("");
 
   const submit = async () => {
-    if (next !== confirm) {
-      toast.error("Passwords do not match");
-      return;
-    }
+    if (next !== confirm) { toast.error("Passwords do not match"); return; }
     await onUpdate(next);
     setNext("");
     setConfirm("");
