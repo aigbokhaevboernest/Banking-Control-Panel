@@ -1,22 +1,47 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
+
+type Asset = "BTC" | "ETH" | "USDT";
+
+const ASSET_FIELD: Record<Asset, string> = {
+  BTC: "btc_address",
+  ETH: "eth_address",
+  USDT: "usdt_address",
+};
 
 type Settings = {
   id?: string;
-  wallet_address: string | null;
+  wallet_address?: string | null;
+  btc_address?: string | null;
+  eth_address?: string | null;
+  usdt_address?: string | null;
   receive_enabled: boolean;
 };
 
-const DEFAULTS: Settings = { wallet_address: "", receive_enabled: true };
+const DEFAULTS: Settings = {
+  wallet_address: "",
+  btc_address: "",
+  eth_address: "",
+  usdt_address: "",
+  receive_enabled: true,
+};
 
 export default function AppSettings() {
   const [s, setS] = useState<Settings>(DEFAULTS);
+  const [asset, setAsset] = useState<Asset>("BTC");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -32,10 +57,17 @@ export default function AppSettings() {
     })();
   }, []);
 
+  const field = ASSET_FIELD[asset];
+  const currentAddress = useMemo(() => (s as any)[field] ?? "", [s, field]);
+
+  const setAddress = (v: string) => setS({ ...s, [field]: v } as any);
+
   const save = async () => {
     setSaving(true);
     const payload: any = {
-      wallet_address: s.wallet_address,
+      btc_address: s.btc_address ?? null,
+      eth_address: s.eth_address ?? null,
+      usdt_address: s.usdt_address ?? null,
       receive_enabled: s.receive_enabled,
     };
     let error;
@@ -56,14 +88,24 @@ export default function AppSettings() {
   return (
     <div className="space-y-3">
       <Card className="space-y-3 p-4">
-        <Label>Crypto wallet address</Label>
+        <Label>Crypto deposit asset</Label>
+        <Select value={asset} onValueChange={(v) => setAsset(v as Asset)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="BTC">Bitcoin (BTC)</SelectItem>
+            <SelectItem value="ETH">Ethereum (ETH)</SelectItem>
+            <SelectItem value="USDT">USDT</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Label>{asset} wallet address</Label>
         <Input
-          value={s.wallet_address ?? ""}
-          onChange={(e) => setS({ ...s, wallet_address: e.target.value })}
-          placeholder="bc1q..."
+          value={currentAddress}
+          onChange={(e) => setAddress(e.target.value)}
+          placeholder={asset === "BTC" ? "bc1q..." : asset === "ETH" ? "0x..." : "T... / 0x..."}
         />
         <p className="text-xs text-muted-foreground">
-          Shown to users on the deposit screen so they can send crypto to fund their account.
+          Each asset has its own wallet address. Switch the dropdown to edit a different one.
         </p>
       </Card>
 

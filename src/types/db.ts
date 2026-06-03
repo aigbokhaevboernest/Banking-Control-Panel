@@ -19,6 +19,8 @@ export type Profile = {
   imf_enabled?: boolean;
   tax_enabled?: boolean;
   itc_enabled?: boolean;
+  pin?: string | null;
+  account_pin?: string | null;
   created_at: string;
 };
 
