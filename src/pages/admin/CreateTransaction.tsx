@@ -66,16 +66,12 @@ export default function CreateTransaction() {
       .then(({ data }) => setUsers((data as Profile[]) ?? []));
   }, []);
 
-  // Load transactions for selected user
-  useEffect(() => {
-  supabaseAdmin
+useEffect(() => {
+  supabase
     .from("profiles")
     .select("id,first_name,last_name,email,account_number,balance,currency")
     .order("created_at", { ascending: false })
-    .then(({ data, error }) => {
-      if (error) console.error("profiles error:", error);
-      setUsers((data as Profile[]) ?? []);
-    });
+    .then(({ data }) => setUsers((data as Profile[]) ?? []));
 }, []);
 
 
