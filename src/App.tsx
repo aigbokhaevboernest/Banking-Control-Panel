@@ -15,6 +15,7 @@ import Deposits from "./pages/admin/Deposits";
 import Loans from "./pages/admin/Loans";
 import History from "./pages/admin/History";
 import Cards from "./pages/admin/Cards";
+import SettingsPage from "./pages/admin/Settings";
 import { WireTransfers, DigitalPayments, LocalTransfers } from "./pages/admin/StatusManager";
 import CreateTransaction from "./pages/admin/CreateTransaction";
 import AppSettings from "./pages/admin/AppSettings";
