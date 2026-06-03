@@ -13,11 +13,10 @@ import UserProfile from "./pages/admin/UserProfile";
 import Transactions from "./pages/admin/Transactions";
 import Deposits from "./pages/admin/Deposits";
 import Loans from "./pages/admin/Loans";
-import Transfers from "./pages/admin/Transfers";
+import History from "./pages/admin/History";
 import Cards from "./pages/admin/Cards";
 import SettingsPage from "./pages/admin/Settings";
-import LoanApplications from "./pages/admin/LoanApplications";
-import { WireTransfers, InternationalTransfers, DigitalPayments } from "./pages/admin/StatusManager";
+import { WireTransfers, DigitalPayments, LocalTransfers } from "./pages/admin/StatusManager";
 import CreateTransaction from "./pages/admin/CreateTransaction";
 import AppSettings from "./pages/admin/AppSettings";
 import NotFound from "./pages/NotFound.tsx";
@@ -50,10 +49,12 @@ const App = () => (
               <Route path="create-transaction" element={<CreateTransaction />} />
               <Route path="deposits" element={<Deposits />} />
               <Route path="loans" element={<Loans />} />
-              <Route path="loan-applications" element={<LoanApplications />} />
-              <Route path="transfers" element={<Transfers />} />
+              <Route path="history" element={<History />} />
+              <Route path="transfers" element={<Navigate to="/admin/history" replace />} />
               <Route path="wire-transfers" element={<WireTransfers />} />
-              <Route path="international-transfers" element={<InternationalTransfers />} />
+              <Route path="local-transfers" element={<LocalTransfers />} />
+              <Route path="international-transfers" element={<Navigate to="/admin/wire-transfers" replace />} />
+              <Route path="loan-applications" element={<Navigate to="/admin/loans" replace />} />
               <Route path="digital-payments" element={<DigitalPayments />} />
               <Route path="cards" element={<Cards />} />
               <Route path="settings" element={<SettingsPage />} />

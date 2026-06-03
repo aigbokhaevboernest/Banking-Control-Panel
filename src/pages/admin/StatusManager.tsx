@@ -16,12 +16,13 @@ import { fmtDate, fmtMoney, fullName } from "@/lib/format";
 import { sendEmail } from "@/lib/notify";
 import { toast } from "sonner";
 
-type Kind = "wire" | "international" | "digital";
+type Kind = "wire" | "international" | "digital" | "local";
 
 const TABLES: Record<Kind, string> = {
   wire: "wire_transfers",
   international: "international_transfers",
   digital: "digital_payments",
+  local: "local_transfers",
 };
 
 export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
@@ -175,6 +176,15 @@ export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
                   <I label="Recipient" value={t.recipient || t.recipient_name} />
                 </>
               )}
+              {kind === "local" && (
+                <>
+                  <I label="Sender" value={t.sender_name || fullName(t.profiles)} />
+                  <I label="Recipient" value={t.recipient_name} />
+                  <I label="Recipient acct" value={t.recipient_account} />
+                  <I label="Bank" value={t.bank_name} />
+                  <I label="Routing" value={t.routing_number} />
+                </>
+              )}
             </div>
 
             {t.admin_note && (
@@ -218,3 +228,4 @@ function I({ label, value }: { label: string; value: any }) {
 export const WireTransfers = () => <StatusManager kind="wire" title="Wire Transfer" />;
 export const InternationalTransfers = () => <StatusManager kind="international" title="International Transfer" />;
 export const DigitalPayments = () => <StatusManager kind="digital" title="Digital Payment" />;
+export const LocalTransfers = () => <StatusManager kind="local" title="Local Transfer" />;
