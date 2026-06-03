@@ -68,15 +68,16 @@ export default function CreateTransaction() {
 
   // Load transactions for selected user
   useEffect(() => {
-    if (!userId) { setTxs([]); return; }
-    supabase
-      .from("transactions")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(50)
-      .then(({ data }) => setTxs(data ?? []));
-  }, [userId]);
+  supabaseAdmin
+    .from("profiles")
+    .select("id,first_name,last_name,email,account_number,balance,currency")
+    .order("created_at", { ascending: false })
+    .then(({ data, error }) => {
+      if (error) console.error("profiles error:", error);
+      setUsers((data as Profile[]) ?? []);
+    });
+}, []);
+
 
   const selected    = useMemo(() => users.find((u) => u.id === userId), [users, userId]);
   const typeConfig  = useMemo(() => TX_TYPES.find((t) => t.value === txType)!, [txType]);
