@@ -59,20 +59,28 @@ export default function CreateTransaction() {
 
   // Load users
   useEffect(() => {
-    supabase
-      .from("profiles")
-      .select("id,first_name,last_name,email,account_number,balance,currency")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => setUsers((data as Profile[]) ?? []));
-  }, []);
-
-useEffect(() => {
-  supabase
+  supabaseAdmin
     .from("profiles")
     .select("id,first_name,last_name,email,account_number,balance,currency")
     .order("created_at", { ascending: false })
-    .then(({ data }) => setUsers((data as Profile[]) ?? []));
+    .then(({ data, error }) => {
+      if (error) console.error("profiles error:", error);
+      setUsers((data as Profile[]) ?? []);
+    });
 }, []);
+
+
+  // Load transactions for selected user
+  useEffect(() => {
+    if (!userId) { setTxs([]); return; }
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50)
+      .then(({ data }) => setTxs(data ?? []));
+  }, [userId]);
 
 
   const selected    = useMemo(() => users.find((u) => u.id === userId), [users, userId]);
