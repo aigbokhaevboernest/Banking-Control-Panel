@@ -418,6 +418,43 @@ function Field({
   );
 }
 
+function PinDisplay({ pin }: { pin: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="space-y-1.5">
+      <Label>Account PIN</Label>
+      <div className="flex gap-2">
+        <Input type={show ? "text" : "password"} value={pin || ""} readOnly placeholder="No PIN set" />
+        <Button type="button" variant="outline" size="icon" onClick={() => setShow((s) => !s)}>
+          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function toLocalInput(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function CreatedAtEditor({ value, onSave }: { value: string; onSave: (iso: string) => void }) {
+  const [v, setV] = useState(toLocalInput(value));
+  useEffect(() => setV(toLocalInput(value)), [value]);
+  return (
+    <div className="space-y-1.5">
+      <Label>Account created at</Label>
+      <div className="flex gap-2">
+        <Input type="datetime-local" value={v} onChange={(e) => setV(e.target.value)} />
+        <Button size="sm" onClick={() => onSave(new Date(v).toISOString())} disabled={v === toLocalInput(value)}>
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function PasswordEditor({
   current,
   show,
