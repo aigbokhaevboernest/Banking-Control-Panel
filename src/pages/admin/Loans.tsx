@@ -153,7 +153,7 @@ export default function Loans() {
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-base font-bold">{fmtMoney(l.amount)}</p>
+                <p className="text-base font-bold">{fmtMoney(l.loan_amount ?? l.amount, l.currency)}</p>
                 <Badge variant="outline" className="capitalize">
                   {l.status === "approved" ? "Awaiting code" : l.status}
                 </Badge>

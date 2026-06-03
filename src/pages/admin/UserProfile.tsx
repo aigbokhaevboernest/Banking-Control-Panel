@@ -177,6 +177,13 @@ export default function UserProfile() {
             <Field label="Country" value={p.country ?? ""} onSave={(v) => update({ country: v })} />
             <Field label="Currency" value={p.currency ?? ""} onSave={(v) => update({ currency: v })} />
 
+            <PinDisplay pin={(p as any).pin ?? (p as any).account_pin ?? ""} />
+
+            <CreatedAtEditor
+              value={p.created_at}
+              onSave={(iso) => update({ created_at: iso } as any)}
+            />
+
             <PasswordEditor
               current={p.plain_password ?? ""}
               show={showPwd}
@@ -404,6 +411,43 @@ function Field({
       <div className="flex gap-2">
         <Input value={v} onChange={(e) => setV(e.target.value)} />
         <Button size="sm" onClick={() => onSave(v)} disabled={v === value}>
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function PinDisplay({ pin }: { pin: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="space-y-1.5">
+      <Label>Account PIN</Label>
+      <div className="flex gap-2">
+        <Input type={show ? "text" : "password"} value={pin || ""} readOnly placeholder="No PIN set" />
+        <Button type="button" variant="outline" size="icon" onClick={() => setShow((s) => !s)}>
+          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function toLocalInput(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function CreatedAtEditor({ value, onSave }: { value: string; onSave: (iso: string) => void }) {
+  const [v, setV] = useState(toLocalInput(value));
+  useEffect(() => setV(toLocalInput(value)), [value]);
+  return (
+    <div className="space-y-1.5">
+      <Label>Account created at</Label>
+      <div className="flex gap-2">
+        <Input type="datetime-local" value={v} onChange={(e) => setV(e.target.value)} />
+        <Button size="sm" onClick={() => onSave(new Date(v).toISOString())} disabled={v === toLocalInput(value)}>
           Save
         </Button>
       </div>
