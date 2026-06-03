@@ -37,7 +37,7 @@ const navItems = [
   { to: "/admin/digital-payments", label: "Digital Payments", icon: Smartphone },
   { to: "/admin/cards", label: "Edit Cards", icon: CreditCard },
   { to: "/admin/app-settings", label: "App Settings", icon: SlidersHorizontal },
-  { to: "/admin/settings", label: "Settings", icon: Settings },
+
 ];
 
 export default function AdminLayout() {
