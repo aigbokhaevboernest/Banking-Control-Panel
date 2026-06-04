@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +12,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { fmtDate, fmtMoney, fullName } from "@/lib/format";
-import { toast } from "sonner";
 
 type Row = {
   id: string;
@@ -27,60 +27,98 @@ type Row = {
   profiles?: any;
 };
 
-const SOURCES: { table: string; label: string; type: string; recipientFields: string[]; amountField?: string }[] = [
-  { table: "transactions", label: "Transaction", type: "transaction", recipientFields: ["recipient"] },
-  { table: "loans", label: "Loan", type: "loan", recipientFields: ["purpose"], amountField: "loan_amount" },
-  { table: "wire_transfers", label: "Wire Transfer", type: "wire", recipientFields: ["recipient_name", "recipient_account"] },
-  { table: "local_transfers", label: "Local Transfer", type: "local", recipientFields: ["recipient_name", "recipient_account"] },
-  { table: "digital_payments", label: "Digital Payment", type: "digital", recipientFields: ["recipient", "recipient_name", "platform"] },
-];
+// Completed/terminal statuses only
+const COMPLETED_STATUSES = new Set([
+  "completed",
+  "approved",
+  "failed",
+  "rejected",
+]);
 
 export default function History() {
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
   const [type, setType] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const all: Row[] = [];
-
-      for (const src of SOURCES) {
-        const { data, error } = await supabase
-          .from(src.table)
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-history"],
+    queryFn: async (): Promise<Row[]> => {
+      const [tx, ln, dp] = await Promise.all([
+        supabase
+          .from("transactions")
           .select("*")
+          .in("status", ["completed", "failed", "rejected"])
           .order("created_at", { ascending: false })
-          .limit(300);
-        if (error) {
-          // Skip tables that don't exist — keep going
-          continue;
-        }
-        for (const r of (data || []) as any[]) {
-          const recipient =
-            src.recipientFields
-              .map((f) => r[f])
-              .filter(Boolean)
-              .join(" · ") || null;
-          all.push({
-            id: `${src.table}:${r.id}`,
-            user_id: r.user_id ?? null,
-            source: src.label,
-            type: r.type || src.type,
-            amount: src.amountField ? (r[src.amountField] ?? r.amount ?? null) : (r.amount ?? null),
-            currency: r.currency ?? null,
-            status: r.status ?? null,
-            recipient,
-            reference: r.reference ?? null,
-            created_at: r.created_at,
-          });
-        }
+          .limit(500),
+        supabase
+          .from("loans")
+          .select("*")
+          .in("status", ["approved", "rejected"])
+          .order("created_at", { ascending: false })
+          .limit(500),
+        supabase
+          .from("digital_payments")
+          .select("*")
+          .in("status", ["completed", "failed", "rejected", "approved"])
+          .order("created_at", { ascending: false })
+          .limit(500),
+      ]);
+
+      const rows: Row[] = [];
+
+      for (const r of (tx.data || []) as any[]) {
+        rows.push({
+          id: `transactions:${r.id}`,
+          user_id: r.user_id,
+          source:
+            r.type === "wire"
+              ? "Wire Transfer"
+              : r.type === "local"
+              ? "Local Transfer"
+              : r.type === "fx"
+              ? "FX Transfer"
+              : "Transaction",
+          type: r.type,
+          amount: r.amount,
+          currency: r.currency,
+          status: r.status,
+          recipient: r.recipient_name || r.recipient || null,
+          reference: r.reference,
+          created_at: r.created_at,
+        });
+      }
+      for (const r of (ln.data || []) as any[]) {
+        rows.push({
+          id: `loans:${r.id}`,
+          user_id: r.user_id,
+          source: "Loan",
+          type: "loan",
+          amount: r.amount,
+          currency: r.currency,
+          status: r.status,
+          recipient: r.purpose,
+          reference: null,
+          created_at: r.created_at ?? r.reviewed_at,
+        });
+      }
+      for (const r of (dp.data || []) as any[]) {
+        rows.push({
+          id: `digital_payments:${r.id}`,
+          user_id: r.user_id,
+          source: "Digital Payment",
+          type: "digital",
+          amount: r.amount,
+          currency: null,
+          status: r.status,
+          recipient: r.platform,
+          reference: null,
+          created_at: r.created_at,
+        });
       }
 
-      const userIds = [...new Set(all.map((r) => r.user_id).filter(Boolean) as string[])];
+      const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean) as string[])];
       const { data: profiles } = userIds.length
         ? await supabase
             .from("profiles")
@@ -89,18 +127,17 @@ export default function History() {
         : { data: [] };
       const map = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
 
-      all.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
-      setRows(all.map((r) => ({ ...r, profiles: r.user_id ? map[r.user_id] : null })));
-      setLoading(false);
-    })().catch((e) => {
-      toast.error(e?.message ?? "Failed to load");
-      setLoading(false);
-    });
-  }, []);
+      rows.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+      return rows.map((r) => ({ ...r, profiles: r.user_id ? map[r.user_id] : null }));
+    },
+  });
+
+  const rows = data ?? [];
 
   const filtered = useMemo(
     () =>
       rows.filter((r) => {
+        if (!COMPLETED_STATUSES.has(String(r.status))) return false;
         if (status !== "all" && r.status !== status) return false;
         if (type !== "all" && r.source !== type) return false;
         if (from && new Date(r.created_at) < new Date(from)) return false;
@@ -129,7 +166,7 @@ export default function History() {
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
-              {["all", "pending", "approved", "completed", "rejected", "failed", "processing"].map((s) => (
+              {["all", "completed", "approved", "failed", "rejected"].map((s) => (
                 <SelectItem key={s} value={s}>{s}</SelectItem>
               ))}
             </SelectContent>
@@ -137,9 +174,8 @@ export default function History() {
           <Select value={type} onValueChange={setType}>
             <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">all</SelectItem>
-              {SOURCES.map((s) => (
-                <SelectItem key={s.label} value={s.label}>{s.label}</SelectItem>
+              {["all", "Transaction", "Wire Transfer", "Local Transfer", "FX Transfer", "Digital Payment", "Loan"].map((s) => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -148,24 +184,24 @@ export default function History() {
         </div>
       </Card>
 
-      {loading ? (
+      {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : filtered.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted-foreground">No activity</Card>
       ) : (
         filtered.map((r) => (
-          <Card key={r.id} className="p-4">
+          <Card key={r.id} className="p-4 overflow-hidden">
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{fullName(r.profiles)}</p>
-                <p className="text-xs text-muted-foreground">{r.profiles?.email}</p>
-                <p className="text-xs text-muted-foreground">{fmtDate(r.created_at)}</p>
-                <p className="mt-1 text-xs capitalize text-muted-foreground">
+                <p className="truncate text-xs text-muted-foreground">{r.profiles?.email}</p>
+                <p className="truncate text-xs text-muted-foreground">{fmtDate(r.created_at)}</p>
+                <p className="mt-1 break-words text-xs capitalize text-muted-foreground">
                   {r.source}{r.recipient ? ` · ${r.recipient}` : ""}{r.reference ? ` · ${r.reference}` : ""}
                 </p>
               </div>
-              <div className="text-right">
-                <p className="text-base font-bold">{fmtMoney(r.amount, r.currency || "USD")}</p>
+              <div className="text-right shrink-0">
+                <p className="text-base font-bold whitespace-nowrap">{fmtMoney(r.amount, r.currency || "USD")}</p>
                 <Badge variant="outline" className="mt-1 capitalize">{r.status ?? "—"}</Badge>
               </div>
             </div>

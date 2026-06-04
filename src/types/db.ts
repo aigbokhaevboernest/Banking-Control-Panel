@@ -73,7 +73,7 @@ export type Card = {
   id: string;
   user_id: string;
   card_number: string | null;
-  card_holder: string | null;
+  cardholder_name: string | null;
   expiry: string | null;
   cvv: string | null;
   card_type: string | null;

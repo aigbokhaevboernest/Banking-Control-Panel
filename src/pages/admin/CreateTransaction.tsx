@@ -32,7 +32,7 @@ const TX_TYPES = [
 
 type TxTypeValue = typeof TX_TYPES[number]["value"];
 
-const STATUSES = ["completed", "pending", "processing", "failed", "rejected"];
+const STATUSES = ["completed", "pending", "processing", "failed"];
 
 function generateReference() {
   const rand = Math.random().toString(36).substring(2, 6).toUpperCase();

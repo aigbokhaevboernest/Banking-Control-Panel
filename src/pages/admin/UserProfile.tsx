@@ -35,7 +35,6 @@ import {
  Trash2,
  ShieldCheck,
  ShieldX,
- Flag,
  Save,
 } from "lucide-react";
 import { fmtMoney, fullName } from "@/lib/format";
@@ -280,10 +279,11 @@ export default function UserProfile() {
   <Input value={form.username} onChange={(e) => handleFormChange("username", e.target.value)} />
 </div>
            <PinDisplay pin={(p as any).pin ?? (p as any).account_pin ?? ""} />
-           <div className="space-y-1.5">
+           <div className="space-y-1.5 min-w-0">
              <Label>Account created at</Label>
              <Input
                type="datetime-local"
+               className="w-full min-w-0 truncate"
                value={toDatetimeLocal(form.created_at)}
                onChange={(e) => handleFormChange("created_at", e.target.value)}
              />
@@ -417,7 +417,7 @@ export default function UserProfile() {
                  value={rejectionReason}
                  onChange={(e) => setRejectionReason(e.target.value)}
                />
-               <div className="grid grid-cols-3 gap-2">
+               <div className="grid grid-cols-2 gap-2">
                  <Button
                    size="sm"
                    onClick={async () => {
@@ -450,16 +450,6 @@ export default function UserProfile() {
                    }}
                  >
                    <ShieldX className="mr-1 h-4 w-4" /> Reject
-                 </Button>
-                 <Button
-                   size="sm"
-                   variant="outline"
-                   onClick={async () => {
-                     await setKyc("flagged");
-                     toast.success("Flagged");
-                   }}
-                 >
-                   <Flag className="mr-1 h-4 w-4" /> Flag
                  </Button>
                </div>
              </div>
