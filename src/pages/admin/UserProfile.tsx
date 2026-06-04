@@ -279,9 +279,6 @@ export default function UserProfile() {
   <Label>Username</Label>
   <Input value={form.username} onChange={(e) => handleFormChange("username", e.target.value)} />
 </div>
-
-<PinDisplay pin={(p as any).pin ?? (p as any).account_pin ?? ""} />
-
            <PinDisplay pin={(p as any).pin ?? (p as any).account_pin ?? ""} />
            <div className="space-y-1.5">
              <Label>Account created at</Label>
