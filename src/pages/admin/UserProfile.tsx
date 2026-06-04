@@ -405,22 +405,7 @@ export default function UserProfile() {
 
         {/* ── KYC TAB ── */}
         <TabsContent value="kyc" className="space-y-3">
-          <Card className="space-y-3 p-4">
-            <Label>KYC status</Label>
-            <p className="text-xs text-muted-foreground">Current: {p.kyc_status}</p>
-            <div className="grid grid-cols-3 gap-2">
-              <Button size="sm" onClick={() => setKyc("approved")}>
-                <ShieldCheck className="mr-1 h-4 w-4" /> Approve
-              </Button>
-              <Button size="sm" variant="destructive" onClick={() => setKyc("rejected")}>
-                <ShieldX className="mr-1 h-4 w-4" /> Reject
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setKyc("flagged")}>
-                <Flag className="mr-1 h-4 w-4" /> Flag
-              </Button>
-            </div>
-          </Card>
-
+          
           {verification ? (
             <Card className="space-y-3 p-4">
               <Label>Submitted Identity Document</Label>
