@@ -67,7 +67,7 @@ export default function AppSettings() {
     const payload: any = {
       btc_wallet_address: s.btc_wallet_address ?? null,
       eth_wallet_address: s.eth_wallet_address ?? null,
-      usdt_Wallet_address: s.usdt_wallet_address ?? null,
+      usdt_wallet_address: s.usdt_wallet_address ?? null,
       receive_enabled: s.receive_enabled,
     };
     let error;
