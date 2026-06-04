@@ -45,7 +45,7 @@ export default function Cards() {
 
   const addCard = async () => {
     if (!selected) return;
-    await supabase.from("cards").insert({ user_id: selected, card_holder: "", card_number: "" });
+    await supabase.from("cards").insert({ user_id: selected, cardholder_name: "", card_number: "" });
     loadCards(selected);
   };
 
@@ -83,7 +83,7 @@ export default function Cards() {
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
-              {(["card_holder", "card_number", "expiry", "cvv", "card_type", "status"] as const).map((k) => (
+              {(["cardholder_name", "card_number", "expiry", "cvv", "card_type", "status"] as const).map((k) => (
                 <div key={k} className="space-y-1">
                   <Label className="capitalize">{k.replace("_", " ")}</Label>
                   <Input

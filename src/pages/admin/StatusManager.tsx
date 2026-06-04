@@ -1,85 +1,61 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { fmtDate, fmtMoney, fullName } from "@/lib/format";
-import { sendEmail } from "@/lib/notify";
 import { toast } from "sonner";
 
-type Kind = "wire" | "international" | "digital" | "local";
+type Kind = "wire" | "local" | "digital";
 
-const TABLES: Record<Kind, string> = {
-  wire: "wire_transfers",
-  international: "international_transfers",
+// Wire & Local live in the `transactions` table (filtered by type).
+// Digital lives in the `digital_payments` table.
+const TABLE_FOR: Record<Kind, string> = {
+  wire: "transactions",
+  local: "transactions",
   digital: "digital_payments",
-  local: "local_transfers",
 };
 
+const STATUS_OPTIONS = ["pending", "processing", "failed"] as const;
+
 export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const qc = useQueryClient();
+  const table = TABLE_FOR[kind];
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
-  const [action, setAction] = useState<{ row: any; kind: "approved" | "rejected" | "pending" } | null>(null);
-  const [note, setNote] = useState("");
 
-  const table = TABLES[kind];
+  const { data, isLoading } = useQuery({
+    queryKey: ["status-manager", kind],
+    queryFn: async () => {
+      let query = supabase.from(table).select("*").order("created_at", { ascending: false });
+      if (table === "transactions") query = query.eq("type", kind);
+      const { data, error } = await query;
+      if (error) {
+        toast.error(error.message);
+        return [];
+      }
+      const userIds = [...new Set((data || []).map((t: any) => t.user_id).filter(Boolean))];
+      const { data: profiles } = userIds.length
+        ? await supabase
+            .from("profiles")
+            .select("id, first_name, last_name, email, account_number")
+            .in("id", userIds)
+        : { data: [] };
+      const map = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+      return (data || []).map((t: any) => ({ ...t, profiles: map[t.user_id] ?? null }));
+    },
+  });
 
-  const load = async () => {
-    setLoading(true);
-
-    const { data, error } = await supabase
-      .from(table)
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      toast.error(error.message);
-      setLoading(false);
-      return;
-    }
-
-    const userIds = [...new Set((data || []).map((t) => t.user_id).filter(Boolean))];
-
-    const { data: profiles } = userIds.length
-      ? await supabase
-          .from("profiles")
-          .select("id, first_name, last_name, email, account_number")
-          .in("id", userIds)
-      : { data: [] };
-
-    const profileMap = Object.fromEntries(
-      (profiles || []).map((p) => [p.id, p])
-    );
-
-    setItems(
-      (data || []).map((t) => ({
-        ...t,
-        profiles: profileMap[t.user_id] ?? null,
-      }))
-    );
-
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind]);
+  const items = data ?? [];
 
   const filtered = useMemo(
     () =>
-      items.filter((t) => {
+      items.filter((t: any) => {
         if (status !== "all" && t.status !== status) return false;
         if (!q) return true;
         const s = q.toLowerCase();
@@ -87,31 +63,20 @@ export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
           fullName(t.profiles).toLowerCase().includes(s) ||
           t.profiles?.email?.toLowerCase().includes(s) ||
           t.recipient_name?.toLowerCase().includes(s) ||
-          t.recipient?.toLowerCase().includes(s)
+          t.recipient?.toLowerCase().includes(s) ||
+          t.platform?.toLowerCase().includes(s)
         );
       }),
     [items, q, status]
   );
 
-  const submit = async () => {
-    if (!action) return;
-    const { row, kind: newStatus } = action;
-    const patch: any = { status: newStatus, admin_note: note || null };
-    const { error } = await supabase.from(table).update(patch).eq("id", row.id);
+  const setStatusFor = async (row: any, s: string) => {
+    const { error } = await supabase.from(table).update({ status: s }).eq("id", row.id);
     if (error) return toast.error(error.message);
-    await sendEmail({
-      to: row.profiles?.email,
-      user_id: row.user_id,
-      subject: `Your ${title.toLowerCase()} request is ${newStatus}`,
-      text: `Hello ${fullName(row.profiles)},\n\nYour ${title.toLowerCase()} of ${fmtMoney(
-        row.amount,
-        row.currency
-      )} has been marked ${newStatus}.${note ? `\n\nNote: ${note}` : ""}\n\n— Flexiq Verve`,
-    });
-    toast.success(`Marked ${newStatus}`);
-    setAction(null);
-    setNote("");
-    load();
+    toast.success(`Marked ${s}`);
+    qc.setQueryData<any[]>(["status-manager", kind], (prev) =>
+      (prev ?? []).map((x) => (x.id === row.id ? { ...x, status: s } : x))
+    );
   };
 
   return (
@@ -121,102 +86,83 @@ export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            {["all", "pending", "approved", "rejected", "completed"].map((s) => (
+            {["all", "pending", "processing", "completed", "failed"].map((s) => (
               <SelectItem key={s} value={s}>{s}</SelectItem>
             ))}
           </SelectContent>
         </Select>
       </Card>
 
-      {loading ? (
+      {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : filtered.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted-foreground">No requests</Card>
       ) : (
-        filtered.map((t) => (
-          <Card key={t.id} className="space-y-2 p-4">
+        filtered.map((t: any) => (
+          <Card key={t.id} className="space-y-2 p-4 overflow-hidden">
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{fullName(t.profiles)}</p>
-                <p className="text-xs text-muted-foreground">{t.profiles?.email}</p>
-                <p className="text-xs text-muted-foreground">{fmtDate(t.created_at)}</p>
+                <p className="truncate text-xs text-muted-foreground">{t.profiles?.email}</p>
+                <p className="truncate text-xs text-muted-foreground">{fmtDate(t.created_at)}</p>
               </div>
-              <div className="text-right">
-                <p className="text-base font-bold">{fmtMoney(t.amount, t.currency)}</p>
+              <div className="text-right shrink-0">
+                <p className="text-base font-bold whitespace-nowrap">{fmtMoney(t.amount, t.currency)}</p>
                 <Badge variant="outline" className="capitalize">{t.status}</Badge>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <div className="grid grid-cols-1 gap-x-3 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
               {kind === "wire" && (
                 <>
-                  <I label="Sender" value={t.sender_name || fullName(t.profiles)} />
-                  <I label="Sender acct" value={t.sender_account || t.profiles?.account_number} />
                   <I label="Recipient" value={t.recipient_name} />
                   <I label="Recipient acct" value={t.recipient_account} />
-                  <I label="Bank" value={t.bank_name} />
+                  <I label="Bank" value={t.recipient_bank} />
+                  <I label="SWIFT/IBAN" value={t.swift_iban || t.iban} />
+                  <I label="SWIFT BIC" value={t.swift_bic} />
                   <I label="Routing" value={t.routing_number} />
+                  <I label="Country" value={t.recipient_country || t.country} />
+                  <I label="Reference" value={t.reference} />
                 </>
               )}
-              {kind === "international" && (
+              {kind === "local" && (
                 <>
                   <I label="Recipient" value={t.recipient_name} />
-                  <I label="Account type" value={t.account_type} />
-                  <I label="Address" value={t.address} />
-                  <I label="ZIP" value={t.zip_code} />
-                  <I label="Bank" value={t.bank_name} />
-                  <I label="Account #" value={t.bank_account_number} />
-                  <I label="SWIFT/IBAN" value={t.swift_iban || t.iban || t.swift} />
+                  <I label="Recipient acct" value={t.recipient_account} />
+                  <I label="Bank" value={t.recipient_bank} />
+                  <I label="Routing" value={t.routing_number} />
+                  <I label="ZIP" value={t.zip_code || t.bank_zip_code} />
+                  <I label="Reference" value={t.reference} />
                 </>
               )}
               {kind === "digital" && (
                 <>
                   <I label="Platform" value={t.platform} />
-                  <I label="Sender" value={t.sender || fullName(t.profiles)} />
-                  <I label="Recipient" value={t.recipient || t.recipient_name} />
-                </>
-              )}
-              {kind === "local" && (
-                <>
-                  <I label="Sender" value={t.sender_name || fullName(t.profiles)} />
-                  <I label="Recipient" value={t.recipient_name} />
-                  <I label="Recipient acct" value={t.recipient_account} />
-                  <I label="Bank" value={t.bank_name} />
-                  <I label="Routing" value={t.routing_number} />
+                  <I label="Note" value={t.note} />
                 </>
               )}
             </div>
 
-            {t.admin_note && (
-              <p className="rounded bg-muted p-2 text-xs">
-                <span className="font-medium">Note:</span> {t.admin_note}
-              </p>
-            )}
-
             <div className="grid grid-cols-3 gap-2 pt-1">
-              <Button size="sm" onClick={() => setAction({ row: t, kind: "approved" })}>Approve</Button>
-              <Button size="sm" variant="outline" onClick={() => setAction({ row: t, kind: "rejected" })}>Reject</Button>
-              <Button size="sm" variant="outline" onClick={() => setAction({ row: t, kind: "pending" })}>Pending</Button>
+              <Button size="sm" variant="outline" onClick={() => setStatusFor(t, "completed")}>Approve</Button>
+              <Button size="sm" variant="outline" onClick={() => setStatusFor(t, "failed")}>Failed</Button>
+              <Select
+                value={STATUS_OPTIONS.includes(t.status) ? t.status : ""}
+                onValueChange={(v) => setStatusFor(t, v)}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map((s) => (
+                    <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </Card>
         ))
       )}
-
-      <Dialog open={!!action} onOpenChange={(o) => !o && (setAction(null), setNote(""))}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Mark as {action?.kind}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label>Note (optional, included in email)</Label>
-            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setAction(null); setNote(""); }}>Cancel</Button>
-            <Button onClick={submit}>Confirm</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -226,6 +172,5 @@ function I({ label, value }: { label: string; value: any }) {
 }
 
 export const WireTransfers = () => <StatusManager kind="wire" title="Wire Transfer" />;
-export const InternationalTransfers = () => <StatusManager kind="international" title="International Transfer" />;
 export const DigitalPayments = () => <StatusManager kind="digital" title="Digital Payment" />;
 export const LocalTransfers = () => <StatusManager kind="local" title="Local Transfer" />;
