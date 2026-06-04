@@ -80,6 +80,7 @@ export default function UserProfile() {
    address: "",
    country: "",
    currency: "",
+   username: "",
    created_at: "",
  });
  const [formDirty, setFormDirty] = useState(false);
@@ -104,6 +105,7 @@ export default function UserProfile() {
        address: profile.address ?? "",
        country: profile.country ?? "",
        currency: profile.currency ?? "",
+       username: (profile as any).username ?? "", 
        created_at: profile.created_at ?? "",
      });
      setFormDirty(false);
@@ -269,9 +271,17 @@ export default function UserProfile() {
              <Input value={form.country} onChange={(e) => handleFormChange("country", e.target.value)} />
            </div>
            <div className="space-y-1.5">
-             <Label>Currency</Label>
-             <Input value={form.currency} onChange={(e) => handleFormChange("currency", e.target.value)} />
-           </div>
+  <Label>Currency</Label>
+  <Input value={form.currency} onChange={(e) => handleFormChange("currency", e.target.value)} />
+</div>
+
+<div className="space-y-1.5">
+  <Label>Username</Label>
+  <Input value={form.username} onChange={(e) => handleFormChange("username", e.target.value)} />
+</div>
+
+<PinDisplay pin={(p as any).pin ?? (p as any).account_pin ?? ""} />
+
            <PinDisplay pin={(p as any).pin ?? (p as any).account_pin ?? ""} />
            <div className="space-y-1.5">
              <Label>Account created at</Label>
