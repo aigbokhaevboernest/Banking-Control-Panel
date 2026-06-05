@@ -287,52 +287,60 @@ export default function UserProfile() {
             </Button>
           </Card>
 
-          {/* Account status — colored buttons, freeze sets frozen=true */}
-          <Card className="space-y-2 p-4">
-            <Label>Account status</Label>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                size="sm"
-                className={`${
-                  p.status === "active"
-                    ? "bg-green-600 text-white hover:bg-green-700"
-                    : "bg-white border border-border text-foreground hover:bg-muted"
-                }`}
-                onClick={() => setPendingStatus("active")}
-              >
-                Activate
-              </Button>
-              <Button
-                size="sm"
-                className={`${
-                  (p as any).frozen === true
-                    ? "bg-blue-600 text-white hover:bg-blue-700"
-                    : "bg-white border border-border text-foreground hover:bg-muted"
-                }`}
-                onClick={() => setPendingStatus("frozen")}
-              >
-                Freeze
-              </Button>
-              <Button
-                size="sm"
-                className={`${
-                  p.status === "blocked"
-                    ? "bg-amber-500 text-white hover:bg-amber-600"
-                    : "bg-white border border-border text-foreground hover:bg-muted"
-                }`}
-                onClick={() => setPendingStatus("blocked")}
-              >
-                Block
-              </Button>
-              <Button
-                size="sm"
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 className="mr-2 h-4 w-4" /> Delete
-              </Button>
-            </div>
-          </Card>
+          {/* Account status — colored active state, white/outlined inactive */}
+<Card className="space-y-2 p-4">
+  <Label>Account status</Label>
+  <div className="grid grid-cols-2 gap-2">
+    {/* Activate — green when active */}
+    <Button
+      size="sm"
+      className={
+        p.status === "active" && !(p as any).frozen
+          ? "bg-green-600 text-white hover:bg-green-700 border-transparent"
+          : "bg-white border border-border text-muted-foreground hover:bg-muted"
+      }
+      onClick={() => setPendingStatus("active")}
+    >
+      Activate
+    </Button>
+
+    {/* Freeze — blue when frozen */}
+    <Button
+      size="sm"
+      className={
+        (p as any).frozen === true
+          ? "bg-blue-600 text-white hover:bg-blue-700 border-transparent"
+          : "bg-white border border-border text-muted-foreground hover:bg-muted"
+      }
+      onClick={() => setPendingStatus("frozen")}
+    >
+      Freeze
+    </Button>
+
+    {/* Block — amber when blocked */}
+    <Button
+      size="sm"
+      className={
+        p.status === "blocked"
+          ? "bg-amber-500 text-white hover:bg-amber-600 border-transparent"
+          : "bg-white border border-border text-muted-foreground hover:bg-muted"
+      }
+      onClick={() => setPendingStatus("blocked")}
+    >
+      Block
+    </Button>
+
+    {/* Delete — always red filled */}
+    <Button
+      size="sm"
+      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+      onClick={() => setConfirmDelete(true)}
+    >
+      <Trash2 className="mr-2 h-4 w-4" /> Delete
+    </Button>
+  </div>
+</Card>
+
 
           <Card className="p-4">
             <PasswordEditor
