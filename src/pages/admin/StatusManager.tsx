@@ -17,8 +17,8 @@ type Kind = "wire" | "local" | "digital";
 // Wire & Local live in the `transactions` table (filtered by type).
 // Digital lives in the `digital_payments` table.
 const TABLE_FOR: Record<Kind, string> = {
-  wire: "transactions",
-  local: "transactions",
+  wire: "wire_transfer",
+  local: "transfer_out",
   digital: "digital_payments",
 };
 
