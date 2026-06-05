@@ -33,23 +33,30 @@ export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ["status-manager", kind],
     queryFn: async () => {
-      let query = supabase.from(table).select("*").order("created_at", { ascending: false });
-      if (table === "transactions") query = query.eq("type", kind);
-      const { data, error } = await query;
-      if (error) {
-        toast.error(error.message);
-        return [];
-      }
-      const userIds = [...new Set((data || []).map((t: any) => t.user_id).filter(Boolean))];
-      const { data: profiles } = userIds.length
-        ? await supabase
-            .from("profiles")
-            .select("id, first_name, last_name, email, account_number")
-            .in("id", userIds)
-        : { data: [] };
-      const map = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
-      return (data || []).map((t: any) => ({ ...t, profiles: map[t.user_id] ?? null }));
-    },
+  let query = supabase.from(table).select("*").order("created_at", { ascending: false });
+
+  if (kind === "wire") {
+    query = query.eq("type", "wire_transfer");
+  } else if (kind === "local") {
+    query = query.eq("type", "transfer_out").ilike("description", "Local transfer%");
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    toast.error(error.message);
+    return [];
+  }
+  const userIds = [...new Set((data || []).map((t: any) => t.user_id).filter(Boolean))];
+  const { data: profiles } = userIds.length
+    ? await supabase
+        .from("profiles")
+        .select("id, first_name, last_name, email, account_number")
+        .in("id", userIds)
+    : { data: [] };
+  const map = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+  return (data || []).map((t: any) => ({ ...t, profiles: map[t.user_id] ?? null }));
+},
+
   });
 
   const items = data ?? [];
