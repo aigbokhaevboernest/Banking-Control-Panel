@@ -496,32 +496,68 @@ export default function UserProfile() {
 
         {/* ── CODES TAB ── */}
 <TabsContent value="codes" className="space-y-3">
- <Card className="space-y-3 p-4">
-   <Label>Default verification code (COT fallback)</Label>
-   <Field
-     label=""
-     value={p.default_verification_code ?? ""}
-     onSave={(v) => update({ default_verification_code: v.toUpperCase() })}
-   />
- </Card>
+  <Card className="space-y-3 p-4">
+    <Label>Default verification code (COT fallback)</Label>
+    <Field
+      label=""
+      value={p.default_verification_code ?? ""}
+      onSave={(v) => update({ default_verification_code: v.toUpperCase() })}
+    />
+  </Card>
 
- <Card className="space-y-3 p-4">
-   <Label>Add / update code</Label>
-   <div className="flex gap-2">
-     <Select value={newCode.type} onValueChange={(v) => setNewCode({ ...newCode, type: v as any })}>
-       <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-       <SelectContent>
-         {CODE_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-       </SelectContent>
-     </Select>
-     <Input
-       placeholder="Code"
-       value={newCode.code}
-       onChange={(e) => setNewCode({ ...newCode, code: e.target.value })}
-     />
-     <Button onClick={addCode}>Save</Button>
-   </div>
- </Card>
+  <Card className="space-y-3 p-4">
+    <Label>Add / update code</Label>
+    <div className="flex gap-2">
+      <Select value={newCode.type} onValueChange={(v) => setNewCode({ ...newCode, type: v as any })}>
+        <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {CODE_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <Input
+        placeholder="Code"
+        value={newCode.code}
+        onChange={(e) => setNewCode({ ...newCode, code: e.target.value })}
+      />
+      <Button onClick={addCode}>Save</Button>
+    </div>
+  </Card>
+
+  <div className="space-y-2">
+    {codes.map((c) => (
+      <Card key={c.id} className="p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Badge>{c.code_type}</Badge>
+            <Input
+              defaultValue={c.code}
+              className="h-8 w-32"
+              onBlur={(e) => e.target.value !== c.code && updateCodeValue(c, e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={c.enabled}
+              disabled={c.code_type === "COT"}
+              onCheckedChange={(v) => toggleCode(c, v)}
+            />
+            <Button
+              size="icon"
+              variant="ghost"
+              disabled={c.code_type === "COT"}
+              onClick={() => deleteCode(c)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        {c.code_type === "COT" && (
+          <p className="mt-1 text-xs text-muted-foreground">COT is always enabled.</p>
+        )}
+      </Card>
+    ))}
+  </div>
+</TabsContent>
 
 
             <Button className="w-full" onClick={saveCodes}>
