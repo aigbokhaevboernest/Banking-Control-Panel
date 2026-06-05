@@ -495,68 +495,34 @@ export default function UserProfile() {
         </TabsContent>
 
         {/* ── CODES TAB ── */}
-        <TabsContent value="codes" className="space-y-3">
-          <Card className="space-y-4 p-4">
-            <Label>Verification Codes</Label>
-            <p className="text-xs text-muted-foreground">
-              COT is always required. Enable TAX, IMF to require them in sequence after COT.
-            </p>
+<TabsContent value="codes" className="space-y-3">
+ <Card className="space-y-3 p-4">
+   <Label>Default verification code (COT fallback)</Label>
+   <Field
+     label=""
+     value={p.default_verification_code ?? ""}
+     onSave={(v) => update({ default_verification_code: v.toUpperCase() })}
+   />
+ </Card>
 
-            {/* COT — always enabled */}
-            <div className="space-y-1.5">
-              <Label className="text-sm font-semibold">COT Code (always active)</Label>
-              <Input
-                placeholder="COT code"
-                value={codes.default_verification_code}
-                onChange={(e) =>
-                  setCodes((c) => ({ ...c, default_verification_code: e.target.value.toUpperCase() }))
-                }
-              />
-            </div>
+ <Card className="space-y-3 p-4">
+   <Label>Add / update code</Label>
+   <div className="flex gap-2">
+     <Select value={newCode.type} onValueChange={(v) => setNewCode({ ...newCode, type: v as any })}>
+       <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+       <SelectContent>
+         {CODE_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+       </SelectContent>
+     </Select>
+     <Input
+       placeholder="Code"
+       value={newCode.code}
+       onChange={(e) => setNewCode({ ...newCode, code: e.target.value })}
+     />
+     <Button onClick={addCode}>Save</Button>
+   </div>
+ </Card>
 
-            {/* TAX */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">TAX Code</Label>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{codes.tax_enabled ? "Enabled" : "Disabled"}</span>
-                  <button
-                    onClick={() => setCodes((c) => ({ ...c, tax_enabled: !c.tax_enabled }))}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                      codes.tax_enabled ? "bg-green-500" : "bg-muted"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                        codes.tax_enabled ? "translate-x-4" : "translate-x-0.5"
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* IMF */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">IMF Code</Label>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{codes.imf_enabled ? "Enabled" : "Disabled"}</span>
-                  <button
-                    onClick={() => setCodes((c) => ({ ...c, imf_enabled: !c.imf_enabled }))}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                      codes.imf_enabled ? "bg-green-500" : "bg-muted"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                        codes.imf_enabled ? "translate-x-4" : "translate-x-0.5"
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-            </div>
 
             <Button className="w-full" onClick={saveCodes}>
               <Save className="mr-2 h-4 w-4" /> Save codes
