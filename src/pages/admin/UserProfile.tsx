@@ -40,14 +40,10 @@ import {
 import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 
-const CODE_TYPES = ["COT", "IMF", "TAX", "ITC"] as const;
+const CODE_TYPES = ["COT", "TAX", "ITC", "IMF"] as const;
 
-const statusBadge = (s: string) =>
- s === "active"
-   ? "bg-[hsl(var(--success))]/15 text-[hsl(var(--success))] border-[hsl(var(--success))]/30"
-   : s === "blocked"
-   ? "bg-destructive/15 text-destructive border-destructive/30"
-   : "bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))] border-[hsl(var(--warning))]/30";
+import { statusBadgeClasses } from "@/lib/statusColors";
+const statusBadge = (s: string) => statusBadgeClasses(s);
 
 function Row({ label, value }: { label: string; value?: string | null }) {
  return (
