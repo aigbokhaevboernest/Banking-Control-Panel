@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { fmtDate, fmtMoney, fullName } from "@/lib/format";
+import { statusBadgeClasses } from "@/lib/statusColors";
 
 export default function Deposits() {
   const [items, setItems] = useState<any[]>([]);
@@ -68,19 +69,19 @@ export default function Deposits() {
             </div>
             <div className="text-right">
               <p className="text-base font-bold">{fmtMoney(d.amount)}</p>
-              <Badge variant="outline" className="capitalize">{d.status}</Badge>
+              <Badge variant="outline" className={`capitalize ${statusBadgeClasses(d.status)}`}>{d.status}</Badge>
             </div>
           </div>
           <div className="flex gap-2 mt-2 justify-end">
             <button
               onClick={() => handleAction(d.id, d.user_id, d.amount, "approved")}
-              className="text-xs bg-green-500 text-white px-3 py-1 rounded-lg"
+              className="text-xs bg-success text-success-foreground px-3 py-1 rounded-lg hover:bg-success/90"
             >
               Approve
             </button>
             <button
               onClick={() => handleAction(d.id, d.user_id, d.amount, "rejected")}
-              className="text-xs bg-red-500 text-white px-3 py-1 rounded-lg"
+              className="text-xs bg-destructive text-destructive-foreground px-3 py-1 rounded-lg hover:bg-destructive/90"
             >
               Decline
             </button>
