@@ -292,37 +292,36 @@ export default function UserProfile() {
          {/* 2. Account status in the middle — 4 buttons, no long delete below */}
          <Card className="space-y-2 p-4">
            <Label>Account status</Label>
-           <div className="grid grid-cols-2 gap-2">
-             <Button
-               variant={p.status === "active" ? "default" : "outline"}
-               size="sm"
-               className={p.status === "active" ? "bg-[hsl(var(--success))] hover:bg-[hsl(var(--success))]/90" : ""}
-               onClick={() => setPendingStatus("active")}
-             >
-               Activate
-             </Button>
-             <Button
-               variant={p.status === "frozen" ? "default" : "outline"}
-               size="sm"
-               onClick={() => setPendingStatus("frozen")}
-             >
-               Freeze
-             </Button>
-             <Button
-               variant="destructive"
-               size="sm"
-               onClick={() => setConfirmDelete(true)}
-             >
-               <Trash2 className="mr-2 h-4 w-4" /> Delete
-             </Button>
-             <Button
-               variant={p.status === "blocked" ? "destructive" : "outline"}
-               size="sm"
-               onClick={() => setPendingStatus("blocked")}
-             >
-               Block
-             </Button>
-           </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                size="sm"
+                className="bg-success text-success-foreground hover:bg-success/90"
+                onClick={() => setPendingStatus("active")}
+              >
+                Activate
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPendingStatus("frozen")}
+              >
+                Freeze
+              </Button>
+              <Button
+                size="sm"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
+              </Button>
+              <Button
+                size="sm"
+                className="bg-warning text-warning-foreground hover:bg-warning/90"
+                onClick={() => setPendingStatus("blocked")}
+              >
+                Block
+              </Button>
+            </div>
          </Card>
 
          {/* 3. Password at the bottom */}

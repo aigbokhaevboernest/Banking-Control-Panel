@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { fmtDate, fmtMoney, fullName } from "@/lib/format";
+import { statusBadgeClasses } from "@/lib/statusColors";
 
 type Row = {
   id: string;
@@ -202,7 +203,7 @@ export default function History() {
               </div>
               <div className="text-right shrink-0">
                 <p className="text-base font-bold whitespace-nowrap">{fmtMoney(r.amount, r.currency || "USD")}</p>
-                <Badge variant="outline" className="mt-1 capitalize">{r.status ?? "—"}</Badge>
+                <Badge variant="outline" className={`mt-1 capitalize ${statusBadgeClasses(r.status)}`}>{r.status ?? "—"}</Badge>
               </div>
             </div>
           </Card>

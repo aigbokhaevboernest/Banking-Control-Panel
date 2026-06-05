@@ -15,9 +15,9 @@ import {
 import { fmtDate, fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 
-type Row = any;
+import { statusBadgeClasses } from "@/lib/statusColors";
 
-const STATUS_OPTIONS = ["pending", "processing", "failed"] as const;
+const STATUS_OPTIONS = ["pending", "processing"] as const;
 
 export default function Transactions() {
   const qc = useQueryClient();
@@ -152,14 +152,14 @@ export default function Transactions() {
               </div>
               <div className="text-right shrink-0">
                 <p className="text-base font-bold whitespace-nowrap">{fmtMoney(t.amount, t.currency)}</p>
-                <Badge variant="outline" className="mt-1 capitalize">{t.status}</Badge>
+                <Badge variant="outline" className={`mt-1 capitalize ${statusBadgeClasses(t.status)}`}>{t.status}</Badge>
               </div>
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
-              <Button size="sm" variant="outline" onClick={() => setStatusFor(t, "completed")}>
+              <Button size="sm" className="bg-success text-success-foreground hover:bg-success/90" onClick={() => setStatusFor(t, "completed")}>
                 Approve
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setStatusFor(t, "failed")}>
+              <Button size="sm" className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => setStatusFor(t, "failed")}>
                 Failed
               </Button>
               <Select value={STATUS_OPTIONS.includes(t.status) ? t.status : ""} onValueChange={(v) => setStatusFor(t, v)}>

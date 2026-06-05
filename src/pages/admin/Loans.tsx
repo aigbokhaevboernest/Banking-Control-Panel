@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { fmtDate, fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
+import { statusBadgeClasses } from "@/lib/statusColors";
 
 const genCode = () => Math.random().toString(36).substring(2, 10).toUpperCase();
 
@@ -154,7 +155,7 @@ export default function Loans() {
               </div>
               <div className="text-right">
                 <p className="text-base font-bold">{fmtMoney(l.loan_amount ?? l.amount, l.currency)}</p>
-                <Badge variant="outline" className="capitalize">{l.status}</Badge>
+                <Badge variant="outline" className={`capitalize ${statusBadgeClasses(l.status)}`}>{l.status}</Badge>
               </div>
             </div>
 
@@ -196,6 +197,7 @@ export default function Loans() {
             <div className="grid grid-cols-3 gap-2">
               <Button
                 size="sm"
+                className="bg-success text-success-foreground hover:bg-success/90"
                 onClick={() => setStatusFor(l.id, "approved")}
                 disabled={l.status === "approved"}
               >
@@ -203,7 +205,7 @@ export default function Loans() {
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 onClick={() => setStatusFor(l.id, "rejected")}
                 disabled={l.status === "rejected"}
               >
