@@ -17,6 +17,8 @@ import { toast } from "sonner";
 
 import { statusBadgeClasses } from "@/lib/statusColors";
 
+type Row = any;
+
 const STATUS_OPTIONS = ["pending", "processing"] as const;
 
 export default function Transactions() {
