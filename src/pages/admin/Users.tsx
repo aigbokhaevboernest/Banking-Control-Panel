@@ -27,6 +27,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MoreVertical, Eye, Ban, Trash2, Hash, Search } from "lucide-react";
 import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
+import { RowSkeletonList } from "@/components/admin/RowSkeleton";
+import { sendEmail } from "@/lib/sendEmail";
+import { accountStatusEmail } from "@/lib/emailTemplates";
 
 const statusColor = (s: string) =>
   s === "active"
@@ -74,10 +78,17 @@ export default function Users() {
     [users, q, filter]
   );
 
-  const doBlock = async (u: Profile) => {
+  const doBlock = async (u: Profile, sendMail: boolean) => {
     const { error } = await supabase.from("profiles").update({ status: "blocked" }).eq("id", u.id);
     if (error) return toast.error(error.message);
-    toast.success("User blocked");
+    if (sendMail && u.email) {
+      const tpl = accountStatusEmail("blocked");
+      const res = await sendEmail({ email: u.email, ...tpl });
+      if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+      else toast.success("User blocked · Email sent");
+    } else {
+      toast.success("User blocked");
+    }
     load();
   };
 
@@ -111,7 +122,7 @@ export default function Users() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <RowSkeletonList rows={6} actions={1} />
       ) : filtered.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted-foreground">No users found</Card>
       ) : (
@@ -172,33 +183,23 @@ export default function Users() {
         </div>
       )}
 
-      <AlertDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirm?.kind === "delete" ? "Delete user?" : "Block user?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirm?.kind === "delete"
-                ? `This will permanently delete ${confirm?.user.email}.`
-                : `${confirm?.user.email} will lose access until reactivated.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (!confirm) return;
-                if (confirm.kind === "delete") await doDelete(confirm.user);
-                else await doBlock(confirm.user);
-                setConfirm(null);
-              }}
-            >
-              Confirm
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmActionDialog
+        open={!!confirm}
+        onOpenChange={(o) => !o && setConfirm(null)}
+        title={confirm?.kind === "delete" ? "Delete User" : "Block User"}
+        description={
+          confirm?.kind === "delete"
+            ? `Do you want to permanently delete ${confirm?.user.email}?`
+            : `Do you want to block ${confirm?.user.email}?`
+        }
+        showSendMail={confirm?.kind === "block"}
+        onConfirm={async (sendMail) => {
+          if (!confirm) return;
+          if (confirm.kind === "delete") await doDelete(confirm.user);
+          else await doBlock(confirm.user, sendMail);
+          setConfirm(null);
+        }}
+      />
     </div>
   );
 }

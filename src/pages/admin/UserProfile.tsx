@@ -39,6 +39,9 @@ import {
 } from "lucide-react";
 import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
+import { sendEmail } from "@/lib/sendEmail";
+import { accountStatusEmail, kycEmail } from "@/lib/emailTemplates";
 
 const CODE_TYPES = ["COT", "TAX", "ITC", "IMF"] as const;
 
@@ -63,8 +66,9 @@ export default function UserProfile() {
   const [showPwd, setShowPwd] = useState(false);
   const [delta, setDelta] = useState("");
   const [newCode, setNewCode] = useState({ type: "COT" as (typeof CODE_TYPES)[number], code: "" });
-  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [pendingStatus, setPendingStatus] = useState<"active" | "frozen" | "blocked" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmKyc, setConfirmKyc] = useState<"approved" | "rejected" | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
 
   const [form, setForm] = useState({
@@ -422,34 +426,14 @@ export default function UserProfile() {
                   <Button
                     size="sm"
                     className="bg-green-600 text-white hover:bg-green-700"
-                    onClick={async () => {
-                      const { error } = await supabase
-                        .from("id_verifications")
-                        .update({ status: "approved", reviewed_at: new Date().toISOString(), rejection_reason: null })
-                        .eq("user_id", p.id);
-                      if (error) return toast.error(error.message);
-                      await setKyc("approved");
-                      setRejectionReason("");
-                      load();
-                      toast.success("Verification approved");
-                    }}
+                    onClick={() => setConfirmKyc("approved")}
                   >
                     <ShieldCheck className="mr-1 h-4 w-4" /> Approve
                   </Button>
                   <Button
                     size="sm"
                     variant="destructive"
-                    onClick={async () => {
-                      const { error } = await supabase
-                        .from("id_verifications")
-                        .update({ status: "rejected", reviewed_at: new Date().toISOString(), rejection_reason: rejectionReason || null })
-                        .eq("user_id", p.id);
-                      if (error) return toast.error(error.message);
-                      await setKyc("rejected");
-                      setRejectionReason("");
-                      load();
-                      toast.success("Verification rejected");
-                    }}
+                    onClick={() => setConfirmKyc("rejected")}
                   >
                     <ShieldX className="mr-1 h-4 w-4" /> Reject
                   </Button>
@@ -529,34 +513,68 @@ export default function UserProfile() {
         </TabsContent>
       </Tabs>
 
-      {/* Status change dialog */}
-      <AlertDialog open={!!pendingStatus} onOpenChange={(o) => !o && setPendingStatus(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Change status to "{pendingStatus}"?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will immediately affect {p.email}'s account access.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (pendingStatus === "frozen") {
-                  await update({ status: "frozen", frozen: true } as any);
-                } else if (pendingStatus === "active") {
-                  await update({ status: "active", frozen: false } as any);
-                } else if (pendingStatus === "blocked") {
-                  await update({ status: "blocked", frozen: false } as any);
-                }
-                setPendingStatus(null);
-              }}
-            >
-              Confirm
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Status change dialog with Send Mail */}
+      <ConfirmActionDialog
+        open={!!pendingStatus}
+        onOpenChange={(o) => !o && setPendingStatus(null)}
+        title={
+          pendingStatus === "active"
+            ? "Activate Account"
+            : pendingStatus === "frozen"
+            ? "Freeze Account"
+            : "Block Account"
+        }
+        description={`Do you want to ${pendingStatus} ${p.email}'s account?`}
+        onConfirm={async (sendMail) => {
+          const patch: any =
+            pendingStatus === "frozen"
+              ? { status: "frozen", frozen: true }
+              : pendingStatus === "active"
+              ? { status: "active", frozen: false }
+              : { status: "blocked", frozen: false };
+          const { error } = await supabase.from("profiles").update(patch).eq("id", p.id);
+          if (error) { toast.error(error.message); return; }
+          setP({ ...p, ...patch });
+          if (sendMail && pendingStatus && p.email) {
+            const tpl = accountStatusEmail(pendingStatus);
+            const res = await sendEmail({ email: p.email, ...tpl });
+            if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+            else toast.success("Status updated · Email sent");
+          } else {
+            toast.success("Status updated");
+          }
+          setPendingStatus(null);
+        }}
+      />
+
+      {/* KYC confirm dialog with Send Mail */}
+      <ConfirmActionDialog
+        open={!!confirmKyc}
+        onOpenChange={(o) => !o && setConfirmKyc(null)}
+        title={confirmKyc === "approved" ? "Approve KYC" : "Reject KYC"}
+        description={`Do you want to ${confirmKyc === "approved" ? "approve" : "reject"} this KYC submission?`}
+        onConfirm={async (sendMail) => {
+          if (!confirmKyc) return;
+          const patch =
+            confirmKyc === "approved"
+              ? { status: "approved", reviewed_at: new Date().toISOString(), rejection_reason: null }
+              : { status: "rejected", reviewed_at: new Date().toISOString(), rejection_reason: rejectionReason || null };
+          const { error } = await supabase.from("id_verifications").update(patch).eq("user_id", p.id);
+          if (error) { toast.error(error.message); return; }
+          await update({ kyc_status: confirmKyc });
+          if (sendMail && p.email) {
+            const tpl = kycEmail(confirmKyc, rejectionReason);
+            const res = await sendEmail({ email: p.email, ...tpl });
+            if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+            else toast.success("KYC updated · Email sent");
+          } else {
+            toast.success("KYC updated");
+          }
+          setRejectionReason("");
+          setConfirmKyc(null);
+          load();
+        }}
+      />
 
       {/* Delete dialog */}
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>

@@ -1,0 +1,57 @@
+import { supabase } from "@/lib/supabase";
+
+export interface SendEmailArgs {
+  email: string;
+  subject: string;
+  html?: string;
+  message?: string;
+}
+
+export interface SendEmailResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Invokes the `send-email` Supabase Edge Function.
+ * Never throws — returns { success, error } so callers can show a toast
+ * without rolling back the preceding DB update.
+ */
+export async function sendEmail({
+  email,
+  subject,
+  html,
+  message,
+}: SendEmailArgs): Promise<SendEmailResult> {
+  try {
+    if (!email) return { success: false, error: "Missing recipient email" };
+    const body: Record<string, string> = { email, subject };
+    if (html) body.html = html;
+    if (message) body.message = message;
+
+    const { data, error } = await supabase.functions.invoke("send-email", { body });
+    if (error) {
+      console.error("send-email invoke error:", error);
+      return { success: false, error: error.message };
+    }
+    if (data && (data as any).success === false) {
+      console.error("send-email failed:", data);
+      return { success: false, error: (data as any).error };
+    }
+    return { success: true };
+  } catch (err) {
+    console.error("send-email exception:", err);
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/** Fetch a user's email from profiles by user_id. */
+export async function getUserEmail(userId: string | null | undefined): Promise<string | null> {
+  if (!userId) return null;
+  const { data } = await supabase
+    .from("profiles")
+    .select("email")
+    .eq("id", userId)
+    .maybeSingle();
+  return (data?.email as string) ?? null;
+}

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { fmtDate, fmtMoney, fullName } from "@/lib/format";
 import { statusBadgeClasses } from "@/lib/statusColors";
+import { RowSkeletonList } from "@/components/admin/RowSkeleton";
 
 type Row = {
   id: string;
@@ -40,8 +41,6 @@ export default function History() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
   const [type, setType] = useState("all");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-history"],
@@ -141,8 +140,6 @@ export default function History() {
         if (!COMPLETED_STATUSES.has(String(r.status))) return false;
         if (status !== "all" && r.status !== status) return false;
         if (type !== "all" && r.source !== type) return false;
-        if (from && new Date(r.created_at) < new Date(from)) return false;
-        if (to && new Date(r.created_at) > new Date(to + "T23:59:59")) return false;
         if (q) {
           const s = q.toLowerCase();
           const name = fullName(r.profiles).toLowerCase();
@@ -156,14 +153,14 @@ export default function History() {
         }
         return true;
       }),
-    [rows, q, status, type, from, to]
+    [rows, q, status, type]
   );
 
   return (
     <div className="space-y-3">
       <Card className="space-y-3 p-3">
         <Input placeholder="Search user, recipient, reference" value={q} onChange={(e) => setQ(e.target.value)} />
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2">
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
@@ -180,13 +177,11 @@ export default function History() {
               ))}
             </SelectContent>
           </Select>
-          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
       </Card>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <RowSkeletonList rows={6} actions={1} />
       ) : filtered.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted-foreground">No activity</Card>
       ) : (
