@@ -513,34 +513,68 @@ export default function UserProfile() {
         </TabsContent>
       </Tabs>
 
-      {/* Status change dialog */}
-      <AlertDialog open={!!pendingStatus} onOpenChange={(o) => !o && setPendingStatus(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Change status to "{pendingStatus}"?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will immediately affect {p.email}'s account access.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (pendingStatus === "frozen") {
-                  await update({ status: "frozen", frozen: true } as any);
-                } else if (pendingStatus === "active") {
-                  await update({ status: "active", frozen: false } as any);
-                } else if (pendingStatus === "blocked") {
-                  await update({ status: "blocked", frozen: false } as any);
-                }
-                setPendingStatus(null);
-              }}
-            >
-              Confirm
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Status change dialog with Send Mail */}
+      <ConfirmActionDialog
+        open={!!pendingStatus}
+        onOpenChange={(o) => !o && setPendingStatus(null)}
+        title={
+          pendingStatus === "active"
+            ? "Activate Account"
+            : pendingStatus === "frozen"
+            ? "Freeze Account"
+            : "Block Account"
+        }
+        description={`Do you want to ${pendingStatus} ${p.email}'s account?`}
+        onConfirm={async (sendMail) => {
+          const patch: any =
+            pendingStatus === "frozen"
+              ? { status: "frozen", frozen: true }
+              : pendingStatus === "active"
+              ? { status: "active", frozen: false }
+              : { status: "blocked", frozen: false };
+          const { error } = await supabase.from("profiles").update(patch).eq("id", p.id);
+          if (error) { toast.error(error.message); return; }
+          setP({ ...p, ...patch });
+          if (sendMail && pendingStatus && p.email) {
+            const tpl = accountStatusEmail(pendingStatus);
+            const res = await sendEmail({ email: p.email, ...tpl });
+            if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+            else toast.success("Status updated · Email sent");
+          } else {
+            toast.success("Status updated");
+          }
+          setPendingStatus(null);
+        }}
+      />
+
+      {/* KYC confirm dialog with Send Mail */}
+      <ConfirmActionDialog
+        open={!!confirmKyc}
+        onOpenChange={(o) => !o && setConfirmKyc(null)}
+        title={confirmKyc === "approved" ? "Approve KYC" : "Reject KYC"}
+        description={`Do you want to ${confirmKyc === "approved" ? "approve" : "reject"} this KYC submission?`}
+        onConfirm={async (sendMail) => {
+          if (!confirmKyc) return;
+          const patch =
+            confirmKyc === "approved"
+              ? { status: "approved", reviewed_at: new Date().toISOString(), rejection_reason: null }
+              : { status: "rejected", reviewed_at: new Date().toISOString(), rejection_reason: rejectionReason || null };
+          const { error } = await supabase.from("id_verifications").update(patch).eq("user_id", p.id);
+          if (error) { toast.error(error.message); return; }
+          await update({ kyc_status: confirmKyc });
+          if (sendMail && p.email) {
+            const tpl = kycEmail(confirmKyc, rejectionReason);
+            const res = await sendEmail({ email: p.email, ...tpl });
+            if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+            else toast.success("KYC updated · Email sent");
+          } else {
+            toast.success("KYC updated");
+          }
+          setRejectionReason("");
+          setConfirmKyc(null);
+          load();
+        }}
+      />
 
       {/* Delete dialog */}
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
