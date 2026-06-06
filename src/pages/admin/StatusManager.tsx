@@ -88,7 +88,8 @@ export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
       toast.success(`Marked ${newStatus}`);
       return;
     }
-    const email = row.profiles?.email || (await getUserEmail(row.user_id));
+const email = row.profiles?.email || (await getUserEmail(row.user_id));
+const first_name = row.profiles?.first_name || (await getUserFirstName(row.user_id)) || "";
     if (!email) {
       console.warn("No email found for user", row.user_id);
       toast.success(`Marked ${newStatus}`);
