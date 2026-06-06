@@ -103,7 +103,7 @@ const first_name = row.profiles?.first_name || (await getUserFirstName(row.user_
         ? localTransferEmail(newStatus, row.currency, row.amount, recipient)
         : digitalPaymentEmail(newStatus, row.platform, row.currency, row.amount);
 
-    const res = await sendEmail({ email, ...tpl });
+const res = await sendEmail({ email, first_name, ...tpl });
     if (!res.success) toast.error("Status updated. Email notification could not be sent.");
     else toast.success(`Marked ${newStatus} · Email sent`);
   };
