@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,20 +20,17 @@ import {
   LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fmtMoney } from "@/lib/format";
-
-const WITHDRAWAL_TYPES = ["wire", "local", "fx", "withdrawal", "transfer_out", "bill_payment"];
 
 export default function Overview() {
-  const { data: stats } = useQuery({
+  const { data: stats, isLoading } = useQuery({
     queryKey: ["admin-overview"],
     queryFn: async () => {
-      const [{ data: profiles }, { data: loans }, { data: txs }, { data: digital }] =
+      const [{ data: profiles }, { data: loans }, { count: txCount }, { count: digitalCount }] =
         await Promise.all([
-          supabase.from("profiles").select("status,balance"),
+          supabase.from("profiles").select("status"),
           supabase.from("loans").select("id").eq("status", "pending"),
-          supabase.from("transactions").select("amount,type"),
-          supabase.from("digital_payments").select("amount"),
+          supabase.from("transactions").select("id", { count: "exact", head: true }),
+          supabase.from("digital_payments").select("id", { count: "exact", head: true }),
         ]);
 
       const totalUsers = profiles?.length ?? 0;
@@ -42,64 +40,33 @@ export default function Overview() {
           ["suspended", "blocked", "frozen"].includes(p.status)
         ).length ?? 0;
 
-      const txTotal =
-        txs?.reduce((s: number, t: any) => {
-          if (WITHDRAWAL_TYPES.includes(String(t.type)) || Number(t.amount) < 0) {
-            return s + Math.abs(Number(t.amount || 0));
-          }
-          return s;
-        }, 0) ?? 0;
-      const digitalTotal =
-        digital?.reduce((s: number, d: any) => s + Math.abs(Number(d.amount || 0)), 0) ?? 0;
-
       return {
         totalUsers,
         active,
         suspended,
-        totalTransactions: txTotal + digitalTotal,
+        totalTransactions: (txCount ?? 0) + (digitalCount ?? 0),
         pendingLoans: loans?.length ?? 0,
       };
     },
   });
 
-  const s = stats ?? {
-    totalUsers: 0,
-    active: 0,
-    suspended: 0,
-    totalTransactions: 0,
-    pendingLoans: 0,
-  };
-
   return (
     <div className="grid grid-cols-1 gap-3">
-      <StatCard label="Total Users" value={s.totalUsers} icon={Users} menuHref="/admin/users" />
-      <StatCard label="Active Accounts" value={s.active} icon={CheckCircle2} tone="success" />
-      <StatCard label="Suspended" value={s.suspended} icon={Ban} tone="destructive" />
-      <StatCard
-        label="Total Transactions"
-        value={fmtMoney(s.totalTransactions)}
-        icon={ArrowLeftRight}
-      />
-      <StatCard
-        label="Pending Loans"
-        value={s.pendingLoans}
-        icon={Landmark}
-        tone="warning"
-        menuHref="/admin/loans"
-      />
+      <StatCard label="Total Users" value={stats?.totalUsers} loading={isLoading} icon={Users} menuHref="/admin/users" />
+      <StatCard label="Active Accounts" value={stats?.active} loading={isLoading} icon={CheckCircle2} tone="success" />
+      <StatCard label="Suspended" value={stats?.suspended} loading={isLoading} icon={Ban} tone="destructive" />
+      <StatCard label="Total Transactions" value={stats?.totalTransactions} loading={isLoading} icon={ArrowLeftRight} />
+      <StatCard label="Pending Loans" value={stats?.pendingLoans} loading={isLoading} icon={Landmark} tone="warning" menuHref="/admin/loans" />
     </div>
   );
 }
 
 function StatCard({
-  label,
-  value,
-  icon: Icon,
-  tone = "default",
-  menuHref,
+  label, value, loading, icon: Icon, tone = "default", menuHref,
 }: {
   label: string;
-  value: string | number;
+  value: number | undefined;
+  loading: boolean;
   icon: LucideIcon;
   tone?: "default" | "success" | "warning" | "destructive";
   menuHref?: string;
@@ -116,7 +83,13 @@ function StatCard({
       <div className="flex items-start justify-between gap-3 h-full">
         <div className="min-w-0 flex-1 flex flex-col justify-center gap-2">
           <p className="text-sm font-medium text-muted-foreground truncate">{label}</p>
-          <p className="text-3xl font-bold tracking-tight truncate">{value}</p>
+          {loading || value === undefined ? (
+            <Skeleton className="h-9 w-24" />
+          ) : (
+            <p className="text-3xl font-bold tracking-tight truncate">
+              {value.toLocaleString()}
+            </p>
+          )}
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
           {menuHref && (
@@ -133,12 +106,7 @@ function StatCard({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          <div
-            className={cn(
-              "flex h-12 w-12 items-center justify-center rounded-xl",
-              toneClass
-            )}
-          >
+          <div className={cn("flex h-12 w-12 items-center justify-center rounded-xl", toneClass)}>
             <Icon className="h-5 w-5" />
           </div>
         </div>
