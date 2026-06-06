@@ -20,7 +20,7 @@ export interface ConfirmActionOptions {
   /** Defaults to true. When false the checkbox is hidden. */
   showSendMail?: boolean;
   /** Called with sendMail flag if confirmed; not called on close. */
-  onConfirm: (sendMail: boolean) => Promise<void> | void;
+  onConfirm: (sendMail: boolean) => Promise<unknown> | unknown;
 }
 
 interface Props extends ConfirmActionOptions {
