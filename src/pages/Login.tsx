@@ -55,7 +55,7 @@ export default function Login() {
           <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <Shield className="h-6 w-6" />
           </div>
-          <h1 className="text-xl font-bold">Nova Bank Admin</h1>
+          <h1 className="text-xl font-bold">Banking Control Panel</h1>
           <p className="text-sm text-muted-foreground">Sign in to manage the platform</p>
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
@@ -67,7 +67,7 @@ export default function Login() {
               required
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="admin@flexiqverve.com or username"
+              placeholder="Username or Email"
               autoComplete="username"
             />
           </div>
