@@ -183,33 +183,23 @@ export default function Users() {
         </div>
       )}
 
-      <AlertDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirm?.kind === "delete" ? "Delete user?" : "Block user?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirm?.kind === "delete"
-                ? `This will permanently delete ${confirm?.user.email}.`
-                : `${confirm?.user.email} will lose access until reactivated.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (!confirm) return;
-                if (confirm.kind === "delete") await doDelete(confirm.user);
-                else await doBlock(confirm.user);
-                setConfirm(null);
-              }}
-            >
-              Confirm
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmActionDialog
+        open={!!confirm}
+        onOpenChange={(o) => !o && setConfirm(null)}
+        title={confirm?.kind === "delete" ? "Delete User" : "Block User"}
+        description={
+          confirm?.kind === "delete"
+            ? `Do you want to permanently delete ${confirm?.user.email}?`
+            : `Do you want to block ${confirm?.user.email}?`
+        }
+        showSendMail={confirm?.kind === "block"}
+        onConfirm={async (sendMail) => {
+          if (!confirm) return;
+          if (confirm.kind === "delete") await doDelete(confirm.user);
+          else await doBlock(confirm.user, sendMail);
+          setConfirm(null);
+        }}
+      />
     </div>
   );
 }
