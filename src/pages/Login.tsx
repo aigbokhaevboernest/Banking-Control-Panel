@@ -7,10 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Shield, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function Login() {
   const { signIn, user, isAdmin, loading } = useAuth();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
@@ -22,7 +23,22 @@ export default function Login() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-    const { error } = await signIn(email.trim(), password);
+
+    let email = identifier.trim();
+
+    if (!email.includes("@")) {
+      const { data, error } = await supabase.rpc("get_email_by_username", {
+        _username: email,
+      });
+      if (error || !data) {
+        setSubmitting(false);
+        toast.error("No account found for that username.");
+        return;
+      }
+      email = data as string;
+    }
+
+    const { error } = await signIn(email, password);
     setSubmitting(false);
     if (error) toast.error(error);
     else {
@@ -43,15 +59,15 @@ export default function Login() {
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="identifier">Email or username</Label>
             <Input
-              id="email"
-              type="email"
+              id="identifier"
+              type="text"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@novabank.com"
-              autoComplete="email"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="admin@flexiqverve.com or username"
+              autoComplete="username"
             />
           </div>
           <div className="space-y-2">
