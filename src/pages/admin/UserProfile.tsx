@@ -39,6 +39,9 @@ import {
 } from "lucide-react";
 import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
+import { sendEmail } from "@/lib/sendEmail";
+import { accountStatusEmail, kycEmail } from "@/lib/emailTemplates";
 
 const CODE_TYPES = ["COT", "TAX", "ITC", "IMF"] as const;
 
@@ -63,8 +66,9 @@ export default function UserProfile() {
   const [showPwd, setShowPwd] = useState(false);
   const [delta, setDelta] = useState("");
   const [newCode, setNewCode] = useState({ type: "COT" as (typeof CODE_TYPES)[number], code: "" });
-  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [pendingStatus, setPendingStatus] = useState<"active" | "frozen" | "blocked" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmKyc, setConfirmKyc] = useState<"approved" | "rejected" | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
 
   const [form, setForm] = useState({
