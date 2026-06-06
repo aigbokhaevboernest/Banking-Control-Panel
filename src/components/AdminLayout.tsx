@@ -96,7 +96,7 @@ export default function AdminLayout() {
         <Shield className="h-5 w-5" />
       </div>
       <div className="leading-tight">
-        <div className="text-sm font-semibold">Nova Admin</div>
+        <div className="text-sm font-semibold">ADMIN</div>
         <div className="text-xs text-muted-foreground truncate max-w-[180px]">{user?.email}</div>
       </div>
     </div>
