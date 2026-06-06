@@ -426,34 +426,14 @@ export default function UserProfile() {
                   <Button
                     size="sm"
                     className="bg-green-600 text-white hover:bg-green-700"
-                    onClick={async () => {
-                      const { error } = await supabase
-                        .from("id_verifications")
-                        .update({ status: "approved", reviewed_at: new Date().toISOString(), rejection_reason: null })
-                        .eq("user_id", p.id);
-                      if (error) return toast.error(error.message);
-                      await setKyc("approved");
-                      setRejectionReason("");
-                      load();
-                      toast.success("Verification approved");
-                    }}
+                    onClick={() => setConfirmKyc("approved")}
                   >
                     <ShieldCheck className="mr-1 h-4 w-4" /> Approve
                   </Button>
                   <Button
                     size="sm"
                     variant="destructive"
-                    onClick={async () => {
-                      const { error } = await supabase
-                        .from("id_verifications")
-                        .update({ status: "rejected", reviewed_at: new Date().toISOString(), rejection_reason: rejectionReason || null })
-                        .eq("user_id", p.id);
-                      if (error) return toast.error(error.message);
-                      await setKyc("rejected");
-                      setRejectionReason("");
-                      load();
-                      toast.success("Verification rejected");
-                    }}
+                    onClick={() => setConfirmKyc("rejected")}
                   >
                     <ShieldX className="mr-1 h-4 w-4" /> Reject
                   </Button>
