@@ -11,11 +11,13 @@ import {
 import { fmtDate, fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 import { statusBadgeClasses } from "@/lib/statusColors";
+import { useConfirmAction } from "@/components/admin/ConfirmActionDialog";
+import { RowSkeletonList } from "@/components/admin/RowSkeleton";
+import { sendEmail, getUserEmail } from "@/lib/sendEmail";
+import { wireTransferEmail, localTransferEmail, digitalPaymentEmail } from "@/lib/emailTemplates";
 
 type Kind = "wire" | "local" | "digital";
 
-// Wire & Local live in the `transactions` table (filtered by type).
-// Digital lives in the `digital_payments` table.
 const TABLE_FOR: Record<Kind, string> = {
   wire: "transactions",
   local: "transactions",
@@ -24,39 +26,36 @@ const TABLE_FOR: Record<Kind, string> = {
 
 const STATUS_OPTIONS = ["pending", "processing"] as const;
 
+const STATUS_LABEL: Record<string, string> = {
+  completed: "Approve",
+  failed: "Mark Failed",
+  pending: "Mark Pending",
+  processing: "Mark Processing",
+};
+
 export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
   const qc = useQueryClient();
   const table = TABLE_FOR[kind];
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
+  const { dialog, confirm } = useConfirmAction();
 
   const { data, isLoading } = useQuery({
     queryKey: ["status-manager", kind],
     queryFn: async () => {
-  let query = supabase.from(table).select("*").order("created_at", { ascending: false });
+      let query = supabase.from(table).select("*").order("created_at", { ascending: false });
+      if (kind === "wire") query = query.eq("type", "wire_transfer");
+      else if (kind === "local") query = query.eq("type", "transfer_out").ilike("description", "Local transfer%");
 
-  if (kind === "wire") {
-    query = query.eq("type", "wire_transfer");
-  } else if (kind === "local") {
-    query = query.eq("type", "transfer_out").ilike("description", "Local transfer%");
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    toast.error(error.message);
-    return [];
-  }
-  const userIds = [...new Set((data || []).map((t: any) => t.user_id).filter(Boolean))];
-  const { data: profiles } = userIds.length
-    ? await supabase
-        .from("profiles")
-        .select("id, first_name, last_name, email, account_number")
-        .in("id", userIds)
-    : { data: [] };
-  const map = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
-  return (data || []).map((t: any) => ({ ...t, profiles: map[t.user_id] ?? null }));
-},
-
+      const { data, error } = await query;
+      if (error) { toast.error(error.message); return []; }
+      const userIds = [...new Set((data || []).map((t: any) => t.user_id).filter(Boolean))];
+      const { data: profiles } = userIds.length
+        ? await supabase.from("profiles").select("id, first_name, last_name, email, account_number").in("id", userIds)
+        : { data: [] };
+      const map = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+      return (data || []).map((t: any) => ({ ...t, profiles: map[t.user_id] ?? null }));
+    },
   });
 
   const items = data ?? [];
@@ -78,17 +77,46 @@ export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
     [items, q, status]
   );
 
-  const setStatusFor = async (row: any, s: string) => {
-    const { error } = await supabase.from(table).update({ status: s }).eq("id", row.id);
+  const applyStatus = async (row: any, newStatus: string, sendMail: boolean) => {
+    const { error } = await supabase.from(table).update({ status: newStatus }).eq("id", row.id);
     if (error) return toast.error(error.message);
-    toast.success(`Marked ${s}`);
     qc.setQueryData<any[]>(["status-manager", kind], (prev) =>
-      (prev ?? []).map((x) => (x.id === row.id ? { ...x, status: s } : x))
+      (prev ?? []).map((x) => (x.id === row.id ? { ...x, status: newStatus } : x))
     );
+
+    if (!sendMail) {
+      toast.success(`Marked ${newStatus}`);
+      return;
+    }
+    const email = row.profiles?.email || (await getUserEmail(row.user_id));
+    if (!email) {
+      console.warn("No email found for user", row.user_id);
+      toast.success(`Marked ${newStatus}`);
+      return;
+    }
+    const recipient = row.recipient_name || row.recipient || null;
+    const tpl =
+      kind === "wire"
+        ? wireTransferEmail(newStatus, row.currency, row.amount, recipient)
+        : kind === "local"
+        ? localTransferEmail(newStatus, row.currency, row.amount, recipient)
+        : digitalPaymentEmail(newStatus, row.platform, row.currency, row.amount);
+
+    const res = await sendEmail({ email, ...tpl });
+    if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+    else toast.success(`Marked ${newStatus} · Email sent`);
   };
+
+  const requestStatus = (row: any, newStatus: string) =>
+    confirm({
+      title: `${STATUS_LABEL[newStatus] || "Update"} ${title}`,
+      description: `Do you want to mark this ${title.toLowerCase()} as "${newStatus}"?`,
+      onConfirm: (sm) => applyStatus(row, newStatus, sm),
+    });
 
   return (
     <div className="space-y-3">
+      {dialog}
       <Card className="space-y-3 p-3">
         <Input placeholder="Search user or recipient" value={q} onChange={(e) => setQ(e.target.value)} />
         <Select value={status} onValueChange={setStatus}>
@@ -102,7 +130,7 @@ export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
       </Card>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <RowSkeletonList rows={5} actions={3} />
       ) : filtered.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted-foreground">No requests</Card>
       ) : (
@@ -152,15 +180,13 @@ export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
             </div>
 
             <div className="grid grid-cols-3 gap-2 pt-1">
-              <Button size="sm" className="bg-success text-success-foreground hover:bg-success/90" onClick={() => setStatusFor(t, "completed")}>Approve</Button>
-              <Button size="sm" className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => setStatusFor(t, "failed")}>Failed</Button>
+              <Button size="sm" className="bg-success text-success-foreground hover:bg-success/90" onClick={() => requestStatus(t, "completed")}>Approve</Button>
+              <Button size="sm" className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => requestStatus(t, "failed")}>Failed</Button>
               <Select
                 value={STATUS_OPTIONS.includes(t.status) ? t.status : ""}
-                onValueChange={(v) => setStatusFor(t, v)}
+                onValueChange={(v) => requestStatus(t, v)}
               >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Status" /></SelectTrigger>
                 <SelectContent>
                   {STATUS_OPTIONS.map((s) => (
                     <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
