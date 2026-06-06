@@ -25,7 +25,7 @@ export async function sendEmail({
 }: SendEmailArgs): Promise<SendEmailResult> {
   try {
     if (!email) return { success: false, error: "Missing recipient email" };
-    const body: Record<string, string> = { email, subject };
+    const body: Record<string, string> = { to: email, subject };
     if (html) body.html = html;
     if (message) body.message = message;
 
