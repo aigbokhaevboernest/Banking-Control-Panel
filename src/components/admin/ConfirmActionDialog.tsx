@@ -19,6 +19,8 @@ export interface ConfirmActionOptions {
   description?: string;
   /** Defaults to true. When false the checkbox is hidden. */
   showSendMail?: boolean;
+  /** Confirm button label. Defaults to "Yes". */
+  confirmLabel?: string;
   /** Called with sendMail flag if confirmed; not called on close. */
   onConfirm: (sendMail: boolean) => Promise<unknown> | unknown;
 }
