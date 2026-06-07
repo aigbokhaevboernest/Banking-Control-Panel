@@ -71,6 +71,10 @@ export default function UserProfile() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmKyc, setConfirmKyc] = useState<"approved" | "rejected" | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [pendingCode, setPendingCode] = useState<null | { type: (typeof CODE_TYPES)[number]; code: string }>(null);
+  const [billing, setBilling] = useState({ type: "General", subject: "", body: "" });
+  const [billingError, setBillingError] = useState("");
+  const [confirmBilling, setConfirmBilling] = useState(false);
 
   const [form, setForm] = useState({
     first_name: "",
