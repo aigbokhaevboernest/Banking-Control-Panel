@@ -30,23 +30,17 @@ type Row = {
   profiles?: any;
 };
 
-// Completed/terminal statuses only
-const COMPLETED_STATUSES = new Set([
-  "completed",
-  "approved",
-  "failed",
-  "rejected",
-]);
+const TERMINAL = new Set(["completed", "approved", "failed", "rejected"]);
 
 export default function History() {
   const [q, setQ] = useState("");
-  const [status, setStatus] = useState("all");
-  const [type, setType] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-history"],
     queryFn: async (): Promise<Row[]> => {
-      const [tx, ln, dp] = await Promise.all([
+      const [txRes, lnRes, dpRes] = await Promise.all([
         supabase
           .from("transactions")
           .select("*")
@@ -69,21 +63,24 @@ export default function History() {
 
       const rows: Row[] = [];
 
-      for (const r of (tx.data || []) as any[]) {
+      // Transactions — read type directly from column
+      for (const r of (txRes.data || []) as any[]) {
         rows.push({
           id: `transactions:${r.id}`,
           user_id: r.user_id,
           source: getTransactionLabel(r.type),
-          type: r.type,
+          type: r.type || "transaction",
           amount: r.amount,
           currency: r.currency,
           status: r.status,
           recipient: r.recipient_name || r.recipient || null,
-          reference: r.reference,
+          reference: r.reference || null,
           created_at: r.created_at,
         });
       }
-      for (const r of (ln.data || []) as any[]) {
+
+      // Loans
+      for (const r of (lnRes.data || []) as any[]) {
         rows.push({
           id: `loans:${r.id}`,
           user_id: r.user_id,
@@ -92,26 +89,29 @@ export default function History() {
           amount: r.amount,
           currency: r.currency,
           status: r.status,
-          recipient: r.purpose,
+          recipient: r.purpose || null,
           reference: null,
-          created_at: r.created_at ?? r.reviewed_at,
+          created_at: r.created_at || r.reviewed_at,
         });
       }
-      for (const r of (dp.data || []) as any[]) {
+
+      // Digital payments — no currency column, use platform as recipient
+      for (const r of (dpRes.data || []) as any[]) {
         rows.push({
           id: `digital_payments:${r.id}`,
           user_id: r.user_id,
           source: "Digital Payment",
-          type: "digital",
+          type: "digital_payment",
           amount: r.amount,
           currency: null,
           status: r.status,
-          recipient: r.platform,
+          recipient: r.platform || null,
           reference: null,
           created_at: r.created_at,
         });
       }
 
+      // Fetch profiles
       const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean) as string[])];
       const { data: profiles } = userIds.length
         ? await supabase
@@ -119,8 +119,8 @@ export default function History() {
             .select("id, first_name, last_name, email, account_number")
             .in("id", userIds)
         : { data: [] };
-      const map = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
 
+      const map = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
       rows.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
       return rows.map((r) => ({ ...r, profiles: r.user_id ? map[r.user_id] : null }));
     },
@@ -131,9 +131,9 @@ export default function History() {
   const filtered = useMemo(
     () =>
       rows.filter((r) => {
-        if (!COMPLETED_STATUSES.has(String(r.status))) return false;
-        if (status !== "all" && r.status !== status) return false;
-        if (type !== "all" && r.source !== type) return false;
+        if (!TERMINAL.has(String(r.status))) return false;
+        if (statusFilter !== "all" && r.status !== statusFilter) return false;
+        if (typeFilter !== "all" && r.type !== typeFilter) return false;
         if (q) {
           const s = q.toLowerCase();
           const name = fullName(r.profiles).toLowerCase();
@@ -147,15 +147,19 @@ export default function History() {
         }
         return true;
       }),
-    [rows, q, status, type]
+    [rows, q, statusFilter, typeFilter]
   );
 
   return (
     <div className="space-y-3">
       <Card className="space-y-3 p-3">
-        <Input placeholder="Search user, recipient, reference" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input
+          placeholder="Search user, recipient, reference"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
         <div className="grid grid-cols-2 gap-2">
-          <Select value={status} onValueChange={setStatus}>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               {["all", "completed", "approved", "failed", "rejected"].map((s) => (
@@ -163,11 +167,22 @@ export default function History() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={type} onValueChange={setType}>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
             <SelectContent>
-              {["all", "Transaction", "Wire Transfer", "Local Transfer", "FX Transfer", "Digital Payment", "Loan"].map((s) => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
+              {[
+                { value: "all", label: "All Types" },
+                { value: "wire_transfer", label: "Wire Transfer" },
+                { value: "transfer_out", label: "Local Transfer" },
+                { value: "fx", label: "FX Transfer" },
+                { value: "deposit", label: "Deposit" },
+                { value: "withdrawal", label: "Withdrawal" },
+                { value: "loan", label: "Loan" },
+                { value: "digital_payment", label: "Digital Payment" },
+                { value: "transfer", label: "Transfer" },
+                { value: "transfer_in", label: "Incoming Transfer" },
+              ].map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -185,14 +200,25 @@ export default function History() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{fullName(r.profiles)}</p>
                 <p className="truncate text-xs text-muted-foreground">{r.profiles?.email}</p>
-                <p className="truncate text-xs text-muted-foreground">{formatTxDate(r.created_at)}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {formatTxDate(r.created_at)}
+                </p>
                 <p className="mt-1 break-words text-xs capitalize text-muted-foreground">
-                  {r.source}{r.recipient ? ` · ${r.recipient}` : ""}{r.reference ? ` · ${r.reference}` : ""}
+                  {r.source}
+                  {r.recipient ? ` · ${r.recipient}` : ""}
+                  {r.reference ? ` · ${r.reference}` : ""}
                 </p>
               </div>
               <div className="text-right shrink-0">
-                <p className="text-base font-bold whitespace-nowrap">{fmtMoney(r.amount, r.currency || "USD")}</p>
-                <Badge variant="outline" className={`mt-1 capitalize ${statusBadgeClasses(r.status)}`}>{r.status ?? "—"}</Badge>
+                <p className="text-base font-bold whitespace-nowrap">
+                  {fmtMoney(r.amount, r.currency || "USD")}
+                </p>
+                <Badge
+                  variant="outline"
+                  className={`mt-1 capitalize ${statusBadgeClasses(r.status)}`}
+                >
+                  {r.status ?? "—"}
+                </Badge>
               </div>
             </div>
           </Card>
