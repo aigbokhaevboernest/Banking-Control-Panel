@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { statusBadgeClasses } from "@/lib/statusColors";
 import { useConfirmAction } from "@/components/admin/ConfirmActionDialog";
 import { RowSkeletonList } from "@/components/admin/RowSkeleton";
-import { sendEmail, getUserEmail } from "@/lib/sendEmail";
+import { sendEmail, getUserEmail, getUserFirstName } from "@/lib/sendEmail";
 import { wireTransferEmail, localTransferEmail, digitalPaymentEmail } from "@/lib/emailTemplates";
 
 type Kind = "wire" | "local" | "digital";
