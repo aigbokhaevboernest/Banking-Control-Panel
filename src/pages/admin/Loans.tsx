@@ -62,22 +62,30 @@ export default function Loans() {
       onConfirm: (sm) => applyStatus(loan, s, sm),
     });
 
-  // Skip modal — auto-generate, save, and send email immediately
-  const generateCode = async (loan: any) => {
+  const requestGenerateCode = (loan: any) =>
+    confirm({
+      title: "Generate Loan Code",
+      description: "Do you want to generate an authorization code and send it to this user?",
+      onConfirm: (sendMail) => generateCode(loan, sendMail),
+    });
+
+  const generateCode = async (loan: any, sendMail: boolean) => {
     setGenerating(loan.id);
     const code = genCode();
     const { error } = await supabase
       .from("loans")
-      .update({ disbursement_code: code, code_used: false, status: "approved" })
+      .update({ disbursement_code: code, code_used: false })
       .eq("id", loan.id);
     if (error) { toast.error(error.message); setGenerating(null); return; }
 
     setGeneratedCodes((prev) => ({ ...prev, [loan.id]: code }));
     setItems((prev) =>
       prev.map((x) =>
-        x.id === loan.id ? { ...x, disbursement_code: code, code_used: false, status: "approved" } : x
+        x.id === loan.id ? { ...x, disbursement_code: code, code_used: false } : x
       )
     );
+
+    if (!sendMail) { toast.success("Code generated."); setGenerating(null); return; }
 
     const email = loan.profiles?.email || (await getUserEmail(loan.user_id));
     if (email) {
@@ -195,7 +203,7 @@ export default function Loans() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => generateCode(l)}
+                onClick={() => requestGenerateCode(l)}
                 disabled={generating === l.id || l.code_used}
               >
                 {generating === l.id ? "Generating…" : "Gen Code"}
