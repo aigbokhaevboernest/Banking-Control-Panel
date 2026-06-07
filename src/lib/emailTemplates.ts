@@ -280,9 +280,12 @@ export function withdrawalCodeEmail(
   type: CodeKind,
   code: string,
   firstName?: string | null,
-): { subject: string; html: string } {
+): { subject: string; message: string; html: string } {
   const meta = CODE_META[type];
   const greeting = firstName ? `Hello ${firstName},` : "Hello,";
+  
+  const message = `${greeting}\n\nYou may use this ${meta.label} to continue your transaction.\n\nYour ${type} Code is:\n\n${code}\n\nLogin to your account and enter this code to complete your withdrawal. Do not share this code with anyone for your security.${FOOTER}`;
+  
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#111">
     <p>${greeting}</p>
     <p>You may use this ${meta.label} to continue your transaction.</p>
@@ -292,8 +295,10 @@ export function withdrawalCodeEmail(
     <p>For more information or complaints, please contact support@flexiqverve.com or make use of the Live Chat on your dashboard for assistance.</p>
     <p>Kind Regards,<br/>Flexiq Verve Support Team</p>
   </div>`;
-  return { subject: meta.subject, html };
+  
+  return { subject: meta.subject, message, html };
 }
+
 
 export function billingEmailHtml(body: string, firstName?: string | null): string {
   const greeting = firstName ? `Hello ${firstName},` : "Hello,";
