@@ -660,6 +660,29 @@ export default function UserProfile() {
       />
 
       {/* Delete dialog */}
+      {/* Code save confirm */}
+      <ConfirmActionDialog
+        open={!!pendingCode}
+        onOpenChange={(o) => !o && setPendingCode(null)}
+        title={pendingCode ? `Save ${pendingCode.type} Code` : "Save Code"}
+        description={
+          pendingCode
+            ? `Do you want to save this ${pendingCode.type} code and notify the user?`
+            : ""
+        }
+        onConfirm={async (sm) => { await saveCodeWithEmail(sm); setPendingCode(null); }}
+      />
+
+      {/* Billing email confirm */}
+      <ConfirmActionDialog
+        open={confirmBilling}
+        onOpenChange={setConfirmBilling}
+        title="Send Billing Email"
+        description="Do you want to send this email to the user?"
+        showSendMail={false}
+        onConfirm={async () => { await sendBillingEmail(); }}
+      />
+
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
