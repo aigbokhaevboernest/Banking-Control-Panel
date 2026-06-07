@@ -1,7 +1,3 @@
-// Centralized contextual email templates for admin actions.
-// Returns { subject, message }. The send-email function wraps `message`
-// in basic HTML so newlines render correctly.
-
 const FOOTER =
   "\n\nFor more information or complaints, please contact support@flexiqverve.com or make use of the Live Chat on your dashboard for assistance.\n\nKind Regards,\nFlexiq Verve Support Team";
 
@@ -145,7 +141,6 @@ export function generalTransactionEmail(
   }
 }
 
-/** Detects type from description/type and routes to the right template. */
 export function transactionEmail(
   status: Status,
   tx: { type?: string | null; description?: string | null; currency?: string | null; amount?: number | null; recipient?: string | null; recipient_name?: string | null },
@@ -268,11 +263,10 @@ export function loanStatusEmail(
 export function loanCodeEmail(code: string): EmailTemplate {
   return {
     subject: "Your Loan Authorization Code — Flexiq Verve",
-    message: `Your Loan Authorization Code is: ${code}. Enter this code in your Flexiq Verve loan code gate to release your loan funds. Do not share this code with anyone for your security.${FOOTER}`,
+    message: `Your Loan Authorization Code is:\n\n${code}\n\nEnter this code in your Flexiq Verve loan code gate to release your loan funds. Do not share this code with anyone for your security.${FOOTER}`,
   };
 }
 
-// ── Withdrawal code emails (COT / TAX / ITC / IMF) ──
 type CodeKind = "COT" | "TAX" | "ITC" | "IMF";
 
 const CODE_META: Record<CodeKind, { subject: string; label: string }> = {
@@ -293,7 +287,7 @@ export function withdrawalCodeEmail(
     <p>${greeting}</p>
     <p>You may use this ${meta.label} to continue your transaction.</p>
     <p>Your ${type} Code is:</p>
-    <p><strong style="font-size: 24px; letter-spacing: 2px;">${code}</strong></p>
+    <p><strong style="font-size:24px; letter-spacing:2px;">${code}</strong></p>
     <p>Login to your account and enter this code to complete your withdrawal. Do not share this code with anyone for your security.</p>
     <p>For more information or complaints, please contact support@flexiqverve.com or make use of the Live Chat on your dashboard for assistance.</p>
     <p>Kind Regards,<br/>Flexiq Verve Support Team</p>
