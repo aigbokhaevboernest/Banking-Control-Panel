@@ -36,6 +36,7 @@ export function ConfirmActionDialog({
   title,
   description,
   showSendMail = true,
+  confirmLabel = "Yes",
   onConfirm,
 }: Props) {
   const [sendMail, setSendMail] = useState(true);
