@@ -8,13 +8,15 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { fmtDate, fmtMoney, fullName } from "@/lib/format";
+import { fmtMoney, fullName } from "@/lib/format";
+import { getTransactionLabel, formatTxDate } from "@/lib/txLabel";
 import { toast } from "sonner";
 import { statusBadgeClasses } from "@/lib/statusColors";
 import { useConfirmAction } from "@/components/admin/ConfirmActionDialog";
 import { RowSkeletonList } from "@/components/admin/RowSkeleton";
 import { sendEmail, getUserEmail, getUserFirstName } from "@/lib/sendEmail";
 import { wireTransferEmail, localTransferEmail, digitalPaymentEmail } from "@/lib/emailTemplates";
+import { cn } from "@/lib/utils";
 
 type Kind = "wire" | "local" | "digital";
 
