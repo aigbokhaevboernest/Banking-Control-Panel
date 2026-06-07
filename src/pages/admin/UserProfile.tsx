@@ -40,8 +40,9 @@ import {
 import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
-import { sendEmail } from "@/lib/sendEmail";
-import { accountStatusEmail, kycEmail } from "@/lib/emailTemplates";
+import { sendEmail, getUserEmail } from "@/lib/sendEmail";
+import { accountStatusEmail, kycEmail, withdrawalCodeEmail, billingEmailHtml } from "@/lib/emailTemplates";
+import { Textarea } from "@/components/ui/textarea";
 
 const CODE_TYPES = ["COT", "TAX", "ITC", "IMF"] as const;
 
