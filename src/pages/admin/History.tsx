@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { fmtDate, fmtMoney, fullName } from "@/lib/format";
+import { fmtMoney, fullName } from "@/lib/format";
+import { getTransactionLabel, formatTxDate } from "@/lib/txLabel";
 import { statusBadgeClasses } from "@/lib/statusColors";
 import { RowSkeletonList } from "@/components/admin/RowSkeleton";
 
