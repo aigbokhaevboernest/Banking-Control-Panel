@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { statusBadgeClasses } from "@/lib/statusColors";
 import { useConfirmAction } from "@/components/admin/ConfirmActionDialog";
 import { RowSkeletonList } from "@/components/admin/RowSkeleton";
-import { sendEmail, getUserEmail } from "@/lib/sendEmail";
+import { sendEmail, getUserEmail, getUserFirstName } from "@/lib/sendEmail";
 import { transactionEmail, digitalPaymentEmail } from "@/lib/emailTemplates";
 import { cn } from "@/lib/utils";
 
@@ -41,7 +41,6 @@ export default function Transactions() {
   const { data, isLoading } = useQuery({
     queryKey: ["admin-transactions"],
     queryFn: async (): Promise<Row[]> => {
-      // Fetch both tables in parallel
       const [txRes, dpRes] = await Promise.all([
         supabase
           .from("transactions")
@@ -57,14 +56,12 @@ export default function Transactions() {
 
       const results: any[] = [];
 
-      // Map transactions rows
       for (const r of (txRes.data || []) as any[]) {
         results.push({
           ...r,
-          id: `transactions:${r.id}`,
+          _uid: `transactions:${r.id}`,
           _table: "transactions",
           _raw_id: r.id,
-          // Use description to detect sub-type if type column is generic
           type: r.type || "transaction",
           recipient: r.recipient_name || r.recipient || null,
           displayAmount: r.amount,
@@ -72,22 +69,20 @@ export default function Transactions() {
         });
       }
 
-      // Map digital_payments rows
       for (const r of (dpRes.data || []) as any[]) {
         results.push({
           ...r,
-          id: `digital_payments:${r.id}`,
+          _uid: `digital_payments:${r.id}`,
           _table: "digital_payments",
           _raw_id: r.id,
           type: "digital_payment",
           recipient: r.platform || null,
           description: r.note || r.platform || "Digital Payment",
           displayAmount: r.amount,
-          displayCurrency: null, // digital_payments has no currency column
+          displayCurrency: null,
         });
       }
 
-      // Fetch profiles for all user_ids
       const userIds = [...new Set(results.map((r) => r.user_id).filter(Boolean))];
       const { data: profiles } = userIds.length
         ? await supabase
@@ -112,12 +107,13 @@ export default function Transactions() {
     if (error) return toast.error(error.message);
 
     qc.setQueryData<Row[]>(["admin-transactions"], (prev) =>
-      (prev ?? []).map((x) => (x.id === row.id ? { ...x, status: s } : x))
+      (prev ?? []).map((x) => (x._uid === row._uid ? { ...x, status: s } : x))
     );
 
     if (!sendMail) { toast.success(`Marked ${s}`); return; }
 
     const email = row.profiles?.email || (await getUserEmail(row.user_id));
+    const first_name = row.profiles?.first_name || (await getUserFirstName(row.user_id)) || "";
     if (!email) { toast.success(`Marked ${s}`); return; }
 
     const tpl = row._table === "digital_payments"
@@ -131,7 +127,7 @@ export default function Transactions() {
           recipient_name: row.recipient_name,
         });
 
-    const res = await sendEmail({ email, ...tpl });
+    const res = await sendEmail({ email, first_name, ...tpl });
     if (!res.success) toast.error("Status updated. Email notification could not be sent.");
     else toast.success(`Marked ${s} · Email sent`);
   };
@@ -215,7 +211,7 @@ export default function Transactions() {
           const dropdownValue = isPending ? "pending" : isProcessing ? "processing" : "";
 
           return (
-            <Card key={t.id} className="p-4 overflow-hidden">
+            <Card key={t._uid} className="p-4 overflow-hidden">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{fullName(t.profiles)}</p>
@@ -225,17 +221,13 @@ export default function Transactions() {
                     {getTransactionLabel(t.type)}
                     {t.recipient ? ` · ${t.recipient}` : ""}
                     {t.reference ? ` · ${t.reference}` : ""}
-                    {t.description && t._table === "digital_payments" ? ` · ${t.description}` : ""}
                   </p>
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-base font-bold whitespace-nowrap">
                     {fmtMoney(t.displayAmount, t.displayCurrency || "USD")}
                   </p>
-                  <Badge
-                    variant="outline"
-                    className={`mt-1 capitalize ${statusBadgeClasses(t.status)}`}
-                  >
+                  <Badge variant="outline" className={`mt-1 capitalize ${statusBadgeClasses(t.status)}`}>
                     {t.status}
                   </Badge>
                 </div>
@@ -245,53 +237,20 @@ export default function Transactions() {
                 <Button
                   size="sm"
                   disabled={isCompleted}
-                  className={cn(
-                    "bg-success text-success-foreground hover:bg-success/90",
-                    isCompleted && "opacity-40 cursor-not-allowed"
-                  )}
+                  className={cn("bg-success text-success-foreground hover:bg-success/90", isCompleted && "opacity-40 cursor-not-allowed")}
                   onClick={() => requestStatus(t, "completed")}
-                >
-                  Approve
-                </Button>
+                >Approve</Button>
                 <Button
                   size="sm"
                   disabled={isFailed}
-                  className={cn(
-                    "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-                    isFailed && "opacity-40 cursor-not-allowed"
-                  )}
+                  className={cn("bg-destructive text-destructive-foreground hover:bg-destructive/90", isFailed && "opacity-40 cursor-not-allowed")}
                   onClick={() => requestStatus(t, "failed")}
-                >
-                  Failed
-                </Button>
-                <Select
-                  value={dropdownValue}
-                  onValueChange={(v) => requestStatus(t, v)}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
+                >Failed</Button>
+                <Select value={dropdownValue} onValueChange={(v) => requestStatus(t, v)}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Status" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem
-                      value="pending"
-                      disabled={isPending}
-                      className={cn(
-                        "capitalize",
-                        isPending && "bg-amber-500 text-white opacity-40 focus:bg-amber-500 focus:text-white"
-                      )}
-                    >
-                      Pending
-                    </SelectItem>
-                    <SelectItem
-                      value="processing"
-                      disabled={isProcessing}
-                      className={cn(
-                        "capitalize",
-                        isProcessing && "bg-blue-600 text-white opacity-40 focus:bg-blue-600 focus:text-white"
-                      )}
-                    >
-                      Processing
-                    </SelectItem>
+                    <SelectItem value="pending" disabled={isPending} className={cn("capitalize", isPending && "opacity-40")}>Pending</SelectItem>
+                    <SelectItem value="processing" disabled={isProcessing} className={cn("capitalize", isProcessing && "opacity-40")}>Processing</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
