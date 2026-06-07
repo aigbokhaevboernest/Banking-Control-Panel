@@ -167,23 +167,9 @@ export default function UserProfile() {
 
   const setKyc = async (kyc_status: string) => update({ kyc_status });
 
-  const addCode = async () => {
+  const addCode = () => {
     if (!newCode.code) return toast.error("Enter a code");
-    const { error } = await supabase.from("withdrawal_codes").upsert(
-      {
-        user_id: p.id,
-        code_type: newCode.type,
-        code: newCode.code.toUpperCase(),
-        enabled: true,
-      },
-      { onConflict: "user_id,code_type" }
-    );
-    if (error) toast.error(error.message);
-    else {
-      toast.success("Code saved");
-      setNewCode({ type: "COT", code: "" });
-      load();
-    }
+    setPendingCode({ type: newCode.type, code: newCode.code.toUpperCase() });
   };
 
   const toggleCode = async (c: WithdrawalCode, enabled: boolean) => {
@@ -192,16 +178,68 @@ export default function UserProfile() {
     load();
   };
 
-  const updateCodeValue = async (c: WithdrawalCode, code: string) => {
-    await supabase.from("withdrawal_codes").update({ code: code.toUpperCase() }).eq("id", c.id);
-    load();
-    toast.success("Code updated");
+  const updateCodeValue = (c: WithdrawalCode, code: string) => {
+    setPendingCode({ type: c.code_type as any, code: code.toUpperCase() });
   };
 
   const deleteCode = async (c: WithdrawalCode) => {
     if (c.code_type === "COT") return toast.error("COT cannot be deleted");
     await supabase.from("withdrawal_codes").delete().eq("id", c.id);
     load();
+  };
+
+  const saveCodeWithEmail = async (sendMail: boolean) => {
+    if (!pendingCode) return;
+    const { type, code } = pendingCode;
+    const { error } = await supabase.from("withdrawal_codes").upsert(
+      { user_id: p!.id, code_type: type, code, enabled: true },
+      { onConflict: "user_id,code_type" }
+    );
+    if (error) { toast.error(error.message); return; }
+    setNewCode({ type: "COT", code: "" });
+    await load();
+
+    if (!sendMail) { toast.success(`${type} code saved`); return; }
+    const email = p?.email || (await getUserEmail(p!.id));
+    if (!email) { toast.success(`${type} code saved`); return; }
+    const tpl = withdrawalCodeEmail(type, code, p?.first_name);
+    const res = await sendEmail({ email, subject: tpl.subject, html: tpl.html });
+    if (!res.success) toast.error("Code saved. Email notification could not be sent.");
+    else toast.success(`${type} code saved · Email sent`);
+  };
+
+  const BILLING_SUBJECTS: Record<string, string> = {
+    COT: "Cost of Transfer (COT) — Flexiq Verve",
+    TAX: "Tax Clearance — Flexiq Verve",
+    ITC: "International Transfer Code (ITC) — Flexiq Verve",
+    IMF: "IMF Code — Flexiq Verve",
+    General: "Message from Flexiq Verve Support",
+  };
+
+  const handleBillingType = (t: string) => {
+    setBilling({ ...billing, type: t, subject: BILLING_SUBJECTS[t] || billing.subject });
+    setBillingError("");
+  };
+
+  const openBillingConfirm = () => {
+    if (!billing.subject.trim() || !billing.body.trim()) {
+      setBillingError("Subject and message are required before sending.");
+      return;
+    }
+    setBillingError("");
+    setConfirmBilling(true);
+  };
+
+  const sendBillingEmail = async () => {
+    const email = p?.email || (await getUserEmail(p!.id));
+    if (!email) { toast.error("User has no email on file."); return; }
+    const html = billingEmailHtml(billing.body, p?.first_name);
+    const res = await sendEmail({ email, subject: billing.subject, html });
+    if (!res.success) toast.error("Email could not be sent. Please try again.");
+    else {
+      toast.success("Billing email sent successfully.");
+      setBilling({ type: "General", subject: BILLING_SUBJECTS.General, body: "" });
+    }
   };
 
   const toDatetimeLocal = (iso: string) => {
