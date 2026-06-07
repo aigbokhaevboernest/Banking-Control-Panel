@@ -73,14 +73,7 @@ export default function History() {
         rows.push({
           id: `transactions:${r.id}`,
           user_id: r.user_id,
-          source:
-            r.type === "wire"
-              ? "Wire Transfer"
-              : r.type === "local"
-              ? "Local Transfer"
-              : r.type === "fx"
-              ? "FX Transfer"
-              : "Transaction",
+          source: getTransactionLabel(r.type),
           type: r.type,
           amount: r.amount,
           currency: r.currency,
