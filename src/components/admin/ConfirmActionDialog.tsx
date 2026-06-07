@@ -19,6 +19,8 @@ export interface ConfirmActionOptions {
   description?: string;
   /** Defaults to true. When false the checkbox is hidden. */
   showSendMail?: boolean;
+  /** Confirm button label. Defaults to "Yes". */
+  confirmLabel?: string;
   /** Called with sendMail flag if confirmed; not called on close. */
   onConfirm: (sendMail: boolean) => Promise<unknown> | unknown;
 }
@@ -34,6 +36,7 @@ export function ConfirmActionDialog({
   title,
   description,
   showSendMail = true,
+  confirmLabel = "Yes",
   onConfirm,
 }: Props) {
   const [sendMail, setSendMail] = useState(true);
@@ -92,7 +95,7 @@ export function ConfirmActionDialog({
             className="flex-1 sm:flex-none text-white hover:opacity-90"
             style={{ backgroundColor: BRAND }}
           >
-            {busy ? "Working…" : "Yes"}
+            {busy ? "Working…" : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { fmtDate, fmtMoney, fullName } from "@/lib/format";
+import { fmtMoney, fullName } from "@/lib/format";
+import { getTransactionLabel, formatTxDate } from "@/lib/txLabel";
 import { statusBadgeClasses } from "@/lib/statusColors";
 import { RowSkeletonList } from "@/components/admin/RowSkeleton";
 
@@ -72,14 +73,7 @@ export default function History() {
         rows.push({
           id: `transactions:${r.id}`,
           user_id: r.user_id,
-          source:
-            r.type === "wire"
-              ? "Wire Transfer"
-              : r.type === "local"
-              ? "Local Transfer"
-              : r.type === "fx"
-              ? "FX Transfer"
-              : "Transaction",
+          source: getTransactionLabel(r.type),
           type: r.type,
           amount: r.amount,
           currency: r.currency,
@@ -191,7 +185,7 @@ export default function History() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{fullName(r.profiles)}</p>
                 <p className="truncate text-xs text-muted-foreground">{r.profiles?.email}</p>
-                <p className="truncate text-xs text-muted-foreground">{fmtDate(r.created_at)}</p>
+                <p className="truncate text-xs text-muted-foreground">{formatTxDate(r.created_at)}</p>
                 <p className="mt-1 break-words text-xs capitalize text-muted-foreground">
                   {r.source}{r.recipient ? ` · ${r.recipient}` : ""}{r.reference ? ` · ${r.reference}` : ""}
                 </p>

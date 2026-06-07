@@ -271,3 +271,46 @@ export function loanCodeEmail(code: string): EmailTemplate {
     message: `Your Loan Authorization Code is: ${code}. Enter this code in your Flexiq Verve loan code gate to release your loan funds. Do not share this code with anyone for your security.${FOOTER}`,
   };
 }
+
+// ── Withdrawal code emails (COT / TAX / ITC / IMF) ──
+type CodeKind = "COT" | "TAX" | "ITC" | "IMF";
+
+const CODE_META: Record<CodeKind, { subject: string; label: string }> = {
+  COT: { subject: "Cost of Transfer (COT) Code — Flexiq Verve", label: "Cost of Transfer (COT) Code" },
+  TAX: { subject: "Tax Clearance Code — Flexiq Verve", label: "Tax Clearance Code" },
+  ITC: { subject: "International Transfer Code (ITC) — Flexiq Verve", label: "International Transfer Code (ITC)" },
+  IMF: { subject: "International Monetary Fund (IMF) Code — Flexiq Verve", label: "International Monetary Fund (IMF) Code" },
+};
+
+export function withdrawalCodeEmail(
+  type: CodeKind,
+  code: string,
+  firstName?: string | null,
+): { subject: string; html: string } {
+  const meta = CODE_META[type];
+  const greeting = firstName ? `Hello ${firstName},` : "Hello,";
+  const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#111">
+    <p>${greeting}</p>
+    <p>You may use this ${meta.label} to continue your transaction.</p>
+    <p>Your ${type} Code is:</p>
+    <p><strong style="font-size: 24px; letter-spacing: 2px;">${code}</strong></p>
+    <p>Login to your account and enter this code to complete your withdrawal. Do not share this code with anyone for your security.</p>
+    <p>For more information or complaints, please contact support@flexiqverve.com or make use of the Live Chat on your dashboard for assistance.</p>
+    <p>Kind Regards,<br/>Flexiq Verve Support Team</p>
+  </div>`;
+  return { subject: meta.subject, html };
+}
+
+export function billingEmailHtml(body: string, firstName?: string | null): string {
+  const greeting = firstName ? `Hello ${firstName},` : "Hello,";
+  const safe = String(body)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br/>");
+  return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#111">
+    <p>${greeting}</p>
+    <div>${safe}</div>
+    <p style="margin-top:16px">Kind Regards,<br/>Flexiq Verve Support Team</p>
+  </div>`;
+}

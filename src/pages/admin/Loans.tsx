@@ -178,7 +178,7 @@ export default function Loans() {
             <div className="grid grid-cols-3 gap-2">
               <Button
                 size="sm"
-                className="bg-success text-success-foreground hover:bg-success/90"
+                className={`bg-success text-success-foreground hover:bg-success/90 ${l.status === "approved" ? "opacity-40 cursor-not-allowed" : ""}`}
                 onClick={() => requestStatus(l, "approved")}
                 disabled={l.status === "approved"}
               >
@@ -186,7 +186,7 @@ export default function Loans() {
               </Button>
               <Button
                 size="sm"
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                className={`bg-destructive text-destructive-foreground hover:bg-destructive/90 ${l.status === "rejected" ? "opacity-40 cursor-not-allowed" : ""}`}
                 onClick={() => requestStatus(l, "rejected")}
                 disabled={l.status === "rejected"}
               >

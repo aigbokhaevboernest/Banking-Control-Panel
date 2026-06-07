@@ -8,13 +8,15 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { fmtDate, fmtMoney, fullName } from "@/lib/format";
+import { fmtMoney, fullName } from "@/lib/format";
+import { getTransactionLabel, formatTxDate } from "@/lib/txLabel";
 import { toast } from "sonner";
 import { statusBadgeClasses } from "@/lib/statusColors";
 import { useConfirmAction } from "@/components/admin/ConfirmActionDialog";
 import { RowSkeletonList } from "@/components/admin/RowSkeleton";
-import { sendEmail, getUserEmail } from "@/lib/sendEmail";
+import { sendEmail, getUserEmail, getUserFirstName } from "@/lib/sendEmail";
 import { wireTransferEmail, localTransferEmail, digitalPaymentEmail } from "@/lib/emailTemplates";
+import { cn } from "@/lib/utils";
 
 type Kind = "wire" | "local" | "digital";
 
@@ -135,13 +137,19 @@ const res = await sendEmail({ email, first_name, ...tpl });
       ) : filtered.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted-foreground">No requests</Card>
       ) : (
-        filtered.map((t: any) => (
+        filtered.map((t: any) => {
+          const isCompleted = t.status === "completed";
+          const isFailed = t.status === "failed";
+          const isPending = t.status === "pending";
+          const isProcessing = t.status === "processing";
+          const dropdownValue = isPending ? "pending" : isProcessing ? "processing" : "";
+          return (
           <Card key={t.id} className="space-y-2 p-4 overflow-hidden">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{fullName(t.profiles)}</p>
                 <p className="truncate text-xs text-muted-foreground">{t.profiles?.email}</p>
-                <p className="truncate text-xs text-muted-foreground">{fmtDate(t.created_at)}</p>
+                <p className="truncate text-xs text-muted-foreground">{formatTxDate(t.created_at)}</p>
               </div>
               <div className="text-right shrink-0">
                 <p className="text-base font-bold whitespace-nowrap">{fmtMoney(t.amount, t.currency)}</p>
@@ -181,22 +189,36 @@ const res = await sendEmail({ email, first_name, ...tpl });
             </div>
 
             <div className="grid grid-cols-3 gap-2 pt-1">
-              <Button size="sm" className="bg-success text-success-foreground hover:bg-success/90" onClick={() => requestStatus(t, "completed")}>Approve</Button>
-              <Button size="sm" className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => requestStatus(t, "failed")}>Failed</Button>
-              <Select
-                value={STATUS_OPTIONS.includes(t.status) ? t.status : ""}
-                onValueChange={(v) => requestStatus(t, v)}
-              >
+              <Button
+                size="sm"
+                disabled={isCompleted}
+                className={cn("bg-success text-success-foreground hover:bg-success/90", isCompleted && "opacity-40 cursor-not-allowed")}
+                onClick={() => requestStatus(t, "completed")}
+              >Approve</Button>
+              <Button
+                size="sm"
+                disabled={isFailed}
+                className={cn("bg-destructive text-destructive-foreground hover:bg-destructive/90", isFailed && "opacity-40 cursor-not-allowed")}
+                onClick={() => requestStatus(t, "failed")}
+              >Failed</Button>
+              <Select value={dropdownValue} onValueChange={(v) => requestStatus(t, v)}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Status" /></SelectTrigger>
                 <SelectContent>
-                  {STATUS_OPTIONS.map((s) => (
-                    <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
-                  ))}
+                  <SelectItem
+                    value="pending"
+                    disabled={isPending}
+                    className={cn("capitalize", isPending && "bg-amber-500 text-white opacity-40 focus:bg-amber-500 focus:text-white")}
+                  >pending</SelectItem>
+                  <SelectItem
+                    value="processing"
+                    disabled={isProcessing}
+                    className={cn("capitalize", isProcessing && "bg-blue-600 text-white opacity-40 focus:bg-blue-600 focus:text-white")}
+                  >processing</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </Card>
-        ))
+        );})
       )}
     </div>
   );

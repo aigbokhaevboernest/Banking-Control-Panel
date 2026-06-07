@@ -82,7 +82,10 @@ export default function Deposits() {
       ) : items.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted-foreground">No deposits</Card>
       ) : (
-        items.map((d) => (
+        items.map((d) => {
+          const isApproved = d.status === "approved";
+          const isDeclined = d.status === "rejected" || d.status === "declined";
+          return (
           <Card key={d.id} className="p-4">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
@@ -98,20 +101,22 @@ export default function Deposits() {
             </div>
             <div className="flex gap-2 mt-2 justify-end">
               <button
+                disabled={isApproved}
                 onClick={() => requestAction(d, "approved")}
-                className="text-xs bg-success text-success-foreground px-3 py-1 rounded-lg hover:bg-success/90"
+                className={`text-xs bg-success text-success-foreground px-3 py-1 rounded-lg hover:bg-success/90 ${isApproved ? "opacity-40 cursor-not-allowed" : ""}`}
               >
                 Approve
               </button>
               <button
+                disabled={isDeclined}
                 onClick={() => requestAction(d, "declined")}
-                className="text-xs bg-destructive text-destructive-foreground px-3 py-1 rounded-lg hover:bg-destructive/90"
+                className={`text-xs bg-destructive text-destructive-foreground px-3 py-1 rounded-lg hover:bg-destructive/90 ${isDeclined ? "opacity-40 cursor-not-allowed" : ""}`}
               >
                 Decline
               </button>
             </div>
           </Card>
-        ))
+        );})
       )}
     </div>
   );

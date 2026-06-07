@@ -40,8 +40,9 @@ import {
 import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
-import { sendEmail } from "@/lib/sendEmail";
-import { accountStatusEmail, kycEmail } from "@/lib/emailTemplates";
+import { sendEmail, getUserEmail } from "@/lib/sendEmail";
+import { accountStatusEmail, kycEmail, withdrawalCodeEmail, billingEmailHtml } from "@/lib/emailTemplates";
+import { Textarea } from "@/components/ui/textarea";
 
 const CODE_TYPES = ["COT", "TAX", "ITC", "IMF"] as const;
 
@@ -70,6 +71,10 @@ export default function UserProfile() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmKyc, setConfirmKyc] = useState<"approved" | "rejected" | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [pendingCode, setPendingCode] = useState<null | { type: (typeof CODE_TYPES)[number]; code: string }>(null);
+  const [billing, setBilling] = useState({ type: "General", subject: "", body: "" });
+  const [billingError, setBillingError] = useState("");
+  const [confirmBilling, setConfirmBilling] = useState(false);
 
   const [form, setForm] = useState({
     first_name: "",
@@ -162,23 +167,9 @@ export default function UserProfile() {
 
   const setKyc = async (kyc_status: string) => update({ kyc_status });
 
-  const addCode = async () => {
+  const addCode = () => {
     if (!newCode.code) return toast.error("Enter a code");
-    const { error } = await supabase.from("withdrawal_codes").upsert(
-      {
-        user_id: p.id,
-        code_type: newCode.type,
-        code: newCode.code.toUpperCase(),
-        enabled: true,
-      },
-      { onConflict: "user_id,code_type" }
-    );
-    if (error) toast.error(error.message);
-    else {
-      toast.success("Code saved");
-      setNewCode({ type: "COT", code: "" });
-      load();
-    }
+    setPendingCode({ type: newCode.type, code: newCode.code.toUpperCase() });
   };
 
   const toggleCode = async (c: WithdrawalCode, enabled: boolean) => {
@@ -187,16 +178,68 @@ export default function UserProfile() {
     load();
   };
 
-  const updateCodeValue = async (c: WithdrawalCode, code: string) => {
-    await supabase.from("withdrawal_codes").update({ code: code.toUpperCase() }).eq("id", c.id);
-    load();
-    toast.success("Code updated");
+  const updateCodeValue = (c: WithdrawalCode, code: string) => {
+    setPendingCode({ type: c.code_type as any, code: code.toUpperCase() });
   };
 
   const deleteCode = async (c: WithdrawalCode) => {
     if (c.code_type === "COT") return toast.error("COT cannot be deleted");
     await supabase.from("withdrawal_codes").delete().eq("id", c.id);
     load();
+  };
+
+  const saveCodeWithEmail = async (sendMail: boolean) => {
+    if (!pendingCode) return;
+    const { type, code } = pendingCode;
+    const { error } = await supabase.from("withdrawal_codes").upsert(
+      { user_id: p!.id, code_type: type, code, enabled: true },
+      { onConflict: "user_id,code_type" }
+    );
+    if (error) { toast.error(error.message); return; }
+    setNewCode({ type: "COT", code: "" });
+    await load();
+
+    if (!sendMail) { toast.success(`${type} code saved`); return; }
+    const email = p?.email || (await getUserEmail(p!.id));
+    if (!email) { toast.success(`${type} code saved`); return; }
+    const tpl = withdrawalCodeEmail(type, code, p?.first_name);
+    const res = await sendEmail({ email, subject: tpl.subject, html: tpl.html });
+    if (!res.success) toast.error("Code saved. Email notification could not be sent.");
+    else toast.success(`${type} code saved · Email sent`);
+  };
+
+  const BILLING_SUBJECTS: Record<string, string> = {
+    COT: "Cost of Transfer (COT) — Flexiq Verve",
+    TAX: "Tax Clearance — Flexiq Verve",
+    ITC: "International Transfer Code (ITC) — Flexiq Verve",
+    IMF: "IMF Code — Flexiq Verve",
+    General: "Message from Flexiq Verve Support",
+  };
+
+  const handleBillingType = (t: string) => {
+    setBilling({ ...billing, type: t, subject: BILLING_SUBJECTS[t] || billing.subject });
+    setBillingError("");
+  };
+
+  const openBillingConfirm = () => {
+    if (!billing.subject.trim() || !billing.body.trim()) {
+      setBillingError("Subject and message are required before sending.");
+      return;
+    }
+    setBillingError("");
+    setConfirmBilling(true);
+  };
+
+  const sendBillingEmail = async () => {
+    const email = p?.email || (await getUserEmail(p!.id));
+    if (!email) { toast.error("User has no email on file."); return; }
+    const html = billingEmailHtml(billing.body, p?.first_name);
+    const res = await sendEmail({ email, subject: billing.subject, html });
+    if (!res.success) toast.error("Email could not be sent. Please try again.");
+    else {
+      toast.success("Billing email sent successfully.");
+      setBilling({ type: "General", subject: BILLING_SUBJECTS.General, body: "" });
+    }
   };
 
   const toDatetimeLocal = (iso: string) => {
@@ -510,6 +553,46 @@ export default function UserProfile() {
               </Card>
             ))}
           </div>
+
+          {/* ── Send Billing Email ── */}
+          <Card className="space-y-3 p-4 mt-4 border-t-4 border-t-[#5B6EF5]">
+            <h3 className="text-base font-semibold">Send Billing Email</h3>
+            <div className="space-y-1.5">
+              <Label>Code Type</Label>
+              <Select value={billing.type} onValueChange={handleBillingType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["COT", "TAX", "ITC", "IMF", "General"].map((t) => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Subject</Label>
+              <Input
+                value={billing.subject}
+                onChange={(e) => { setBilling({ ...billing, subject: e.target.value }); setBillingError(""); }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Email Body</Label>
+              <Textarea
+                rows={6}
+                placeholder="Write the full email message to send to this user..."
+                value={billing.body}
+                onChange={(e) => { setBilling({ ...billing, body: e.target.value }); setBillingError(""); }}
+              />
+            </div>
+            {billingError && <p className="text-xs text-destructive">{billingError}</p>}
+            <Button
+              onClick={openBillingConfirm}
+              className="w-full text-white hover:opacity-90"
+              style={{ backgroundColor: "#5B6EF5" }}
+            >
+              Send Email
+            </Button>
+          </Card>
         </TabsContent>
       </Tabs>
 
@@ -577,6 +660,30 @@ export default function UserProfile() {
       />
 
       {/* Delete dialog */}
+      {/* Code save confirm */}
+      <ConfirmActionDialog
+        open={!!pendingCode}
+        onOpenChange={(o) => !o && setPendingCode(null)}
+        title={pendingCode ? `Save ${pendingCode.type} Code` : "Save Code"}
+        description={
+          pendingCode
+            ? `Do you want to save this ${pendingCode.type} code and notify the user?`
+            : ""
+        }
+        onConfirm={async (sm) => { await saveCodeWithEmail(sm); setPendingCode(null); }}
+      />
+
+      {/* Billing email confirm */}
+      <ConfirmActionDialog
+        open={confirmBilling}
+        onOpenChange={setConfirmBilling}
+        title="Send Billing Email"
+        description="Do you want to send this email to the user?"
+        showSendMail={false}
+        confirmLabel="Send"
+        onConfirm={async () => { await sendBillingEmail(); }}
+      />
+
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
