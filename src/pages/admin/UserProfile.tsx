@@ -553,6 +553,46 @@ export default function UserProfile() {
               </Card>
             ))}
           </div>
+
+          {/* ── Send Billing Email ── */}
+          <Card className="space-y-3 p-4 mt-4 border-t-4 border-t-[#5B6EF5]">
+            <h3 className="text-base font-semibold">Send Billing Email</h3>
+            <div className="space-y-1.5">
+              <Label>Code Type</Label>
+              <Select value={billing.type} onValueChange={handleBillingType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["COT", "TAX", "ITC", "IMF", "General"].map((t) => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Subject</Label>
+              <Input
+                value={billing.subject}
+                onChange={(e) => { setBilling({ ...billing, subject: e.target.value }); setBillingError(""); }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Email Body</Label>
+              <Textarea
+                rows={6}
+                placeholder="Write the full email message to send to this user..."
+                value={billing.body}
+                onChange={(e) => { setBilling({ ...billing, body: e.target.value }); setBillingError(""); }}
+              />
+            </div>
+            {billingError && <p className="text-xs text-destructive">{billingError}</p>}
+            <Button
+              onClick={openBillingConfirm}
+              className="w-full text-white hover:opacity-90"
+              style={{ backgroundColor: "#5B6EF5" }}
+            >
+              Send Email
+            </Button>
+          </Card>
         </TabsContent>
       </Tabs>
 
