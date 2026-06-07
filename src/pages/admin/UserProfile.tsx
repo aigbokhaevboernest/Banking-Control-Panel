@@ -680,6 +680,7 @@ export default function UserProfile() {
         title="Send Billing Email"
         description="Do you want to send this email to the user?"
         showSendMail={false}
+        confirmLabel="Send"
         onConfirm={async () => { await sendBillingEmail(); }}
       />
 
