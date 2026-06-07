@@ -95,7 +95,7 @@ export function ConfirmActionDialog({
             className="flex-1 sm:flex-none text-white hover:opacity-90"
             style={{ backgroundColor: BRAND }}
           >
-            {busy ? "Working…" : "Yes"}
+            {busy ? "Working…" : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
