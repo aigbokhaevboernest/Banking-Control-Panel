@@ -41,7 +41,7 @@ import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
 import { sendEmail, getUserEmail } from "@/lib/sendEmail";
-import { accountStatusEmail, kycEmail, withdrawalCodeEmail, billingEmailHtml } from "@/lib/emailTemplates";
+import { accountStatusEmail, kycEmail, withdrawalCodeEmail, billingEmail } from "@/lib/emailTemplates";
 import { Textarea } from "@/components/ui/textarea";
 
 const CODE_TYPES = ["COT", "TAX", "ITC", "IMF"] as const;
@@ -202,8 +202,8 @@ export default function UserProfile() {
     if (!sendMail) { toast.success(`${type} code saved`); return; }
     const email = p?.email || (await getUserEmail(p!.id));
     if (!email) { toast.success(`${type} code saved`); return; }
-    const tpl = withdrawalCodeEmail(type, code, p?.first_name);
-    const res = await sendEmail({ email, subject: tpl.subject, html: tpl.html });
+    const tpl = withdrawalCodeEmail(type, code);
+    const res = await sendEmail({ email, first_name: p?.first_name ?? "", subject: tpl.subject, message: tpl.message });
     if (!res.success) toast.error("Code saved. Email notification could not be sent.");
     else toast.success(`${type} code saved · Email sent`);
   };
@@ -233,8 +233,8 @@ export default function UserProfile() {
   const sendBillingEmail = async () => {
     const email = p?.email || (await getUserEmail(p!.id));
     if (!email) { toast.error("User has no email on file."); return; }
-    const html = billingEmailHtml(billing.body, p?.first_name);
-    const res = await sendEmail({ email, subject: billing.subject, html });
+    const tpl = billingEmail(billing.body, billing.subject);
+    const res = await sendEmail({ email, first_name: p?.first_name ?? "", subject: tpl.subject, message: tpl.message });
     if (!res.success) toast.error("Email could not be sent. Please try again.");
     else {
       toast.success("Billing email sent successfully.");
@@ -285,8 +285,9 @@ export default function UserProfile() {
         </TabsList>
 
         {/* ── PROFILE TAB ── */}
-        <TabsContent value="profile" className="space-y-3">
+        <TabsContent value="profile" className="space-y-5">
           <Card className="space-y-4 p-4">
+            <h3 className="text-lg font-bold">Personal details</h3>
             <div className="space-y-1.5">
               <Label>First name</Label>
               <Input value={form.first_name} onChange={(e) => handleFormChange("first_name", e.target.value)} />
@@ -334,8 +335,8 @@ export default function UserProfile() {
             </Button>
           </Card>
 
-          <Card className="space-y-2 p-4">
-            <Label>Account status</Label>
+          <Card className="space-y-3 p-4">
+            <h3 className="text-lg font-bold">Account status</h3>
             <div className="grid grid-cols-2 gap-2">
               <Button
                 size="sm"
@@ -491,7 +492,7 @@ export default function UserProfile() {
         </TabsContent>
 
         {/* ── CODES TAB ── */}
-        <TabsContent value="codes" className="space-y-3">
+        <TabsContent value="codes" className="space-y-5">
           <Card className="space-y-3 p-4">
             <Label>Default verification code (COT fallback)</Label>
             <Field
@@ -502,7 +503,7 @@ export default function UserProfile() {
           </Card>
 
           <Card className="space-y-3 p-4">
-            <Label>Add / update code</Label>
+            <h3 className="text-lg font-bold">Add / update code</h3>
             <div className="flex gap-2">
               <Select value={newCode.type} onValueChange={(v) => setNewCode({ ...newCode, type: v as any })}>
                 <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
@@ -556,7 +557,7 @@ export default function UserProfile() {
 
           {/* ── Send Billing Email ── */}
           <Card className="space-y-3 p-4 mt-4 border-t-4 border-t-[#5B6EF5]">
-            <h3 className="text-base font-semibold">Send Billing Email</h3>
+            <h3 className="text-lg font-bold">Send Billing Email</h3>
             <div className="space-y-1.5">
               <Label>Code Type</Label>
               <Select value={billing.type} onValueChange={handleBillingType}>
@@ -620,7 +621,7 @@ export default function UserProfile() {
           setP({ ...p, ...patch });
           if (sendMail && pendingStatus && p.email) {
             const tpl = accountStatusEmail(pendingStatus);
-            const res = await sendEmail({ email: p.email, ...tpl });
+            const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
             if (!res.success) toast.error("Status updated. Email notification could not be sent.");
             else toast.success("Status updated · Email sent");
           } else {
@@ -647,7 +648,7 @@ export default function UserProfile() {
           await update({ kyc_status: confirmKyc });
           if (sendMail && p.email) {
             const tpl = kycEmail(confirmKyc, rejectionReason);
-            const res = await sendEmail({ email: p.email, ...tpl });
+            const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
             if (!res.success) toast.error("Status updated. Email notification could not be sent.");
             else toast.success("KYC updated · Email sent");
           } else {
@@ -752,7 +753,7 @@ function PasswordEditor({
   };
   return (
     <div className="space-y-2 rounded-md border border-border p-3">
-      <Label>User password</Label>
+      <h3 className="text-lg font-bold">User password</h3>
       <div className="space-y-1">
         <p className="text-xs text-muted-foreground">Current</p>
         <div className="flex gap-2">

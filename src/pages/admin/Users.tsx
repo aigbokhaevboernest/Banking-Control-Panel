@@ -83,7 +83,7 @@ export default function Users() {
     if (error) return toast.error(error.message);
     if (sendMail && u.email) {
       const tpl = accountStatusEmail("blocked");
-      const res = await sendEmail({ email: u.email, ...tpl });
+      const res = await sendEmail({ email: u.email, first_name: u.first_name ?? "", ...tpl });
       if (!res.success) toast.error("Status updated. Email notification could not be sent.");
       else toast.success("User blocked · Email sent");
     } else {
