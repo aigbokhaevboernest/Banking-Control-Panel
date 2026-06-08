@@ -27,10 +27,13 @@ export async function sendEmail({
 }: SendEmailArgs): Promise<SendEmailResult> {
  try {
    if (!email) return { success: false, error: "Missing recipient email" };
-   const body: Record<string, string> = { to: email, subject };
-   if (first_name) body.first_name = first_name;
-   if (html) body.html = html;
-   if (message) body.message = message;
+   // Always send as message — edge function expects "message" field
+const body: Record<string, string> = {
+  to: email,
+  subject,
+  first_name: first_name ?? "",
+  message: message || html || "",
+};
 
    const { data, error } = await supabase.functions.invoke("send-email", { body });
    if (error) {
