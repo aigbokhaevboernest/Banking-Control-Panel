@@ -50,7 +50,7 @@ export default function Loans() {
     const email = loan.profiles?.email || (await getUserEmail(loan.user_id));
     if (!email) { toast.success(s); return; }
     const tpl = loanStatusEmail(s, loan.currency, loan.loan_amount ?? loan.amount);
-    const res = await sendEmail({ email, ...tpl });
+    const res = await sendEmail({ email, first_name: loan.profiles?.first_name ?? "", ...tpl });
     if (!res.success) toast.error("Status updated. Email notification could not be sent.");
     else toast.success(`${s} · Email sent`);
   };
@@ -90,7 +90,7 @@ export default function Loans() {
     const email = loan.profiles?.email || (await getUserEmail(loan.user_id));
     if (email) {
       const tpl = loanCodeEmail(code);
-      const res = await sendEmail({ email, ...tpl });
+      const res = await sendEmail({ email, first_name: loan.profiles?.first_name ?? "", ...tpl });
       if (!res.success) toast.error("Code saved. Email could not be sent.");
       else toast.success("Code generated & emailed to user!");
     } else {

@@ -61,7 +61,7 @@ export default function Deposits() {
     const email = d.profiles?.email || (await getUserEmail(d.user_id));
     if (!email) { toast.success(`Deposit ${status}`); return; }
     const tpl = depositEmail(status, d.currency, d.amount);
-    const res = await sendEmail({ email, ...tpl });
+    const res = await sendEmail({ email, first_name: d.profiles?.first_name ?? "", ...tpl });
     if (!res.success) toast.error("Status updated. Email notification could not be sent.");
     else toast.success(`Deposit ${status} · Email sent`);
   };
