@@ -36,6 +36,8 @@ import {
   ShieldCheck,
   ShieldX,
   Save,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
@@ -45,6 +47,12 @@ import { accountStatusEmail, kycEmail, withdrawalCodeEmail, billingEmail } from 
 import { Textarea } from "@/components/ui/textarea";
 
 const CODE_TYPES = ["COT", "TAX", "ITC", "IMF"] as const;
+
+const SECONDARY_ACCOUNT_TYPES = [
+  { key: "checking", label: "Checking" },
+  { key: "savings", label: "Savings" },
+  { key: "retirement", label: "Retirement" },
+] as const;
 
 import { statusBadgeClasses } from "@/lib/statusColors";
 const statusBadge = (s: string) => statusBadgeClasses(s);
@@ -75,6 +83,13 @@ export default function UserProfile() {
   const [billing, setBilling] = useState({ type: "General", subject: "", body: "" });
   const [billingError, setBillingError] = useState("");
   const [confirmBilling, setConfirmBilling] = useState(false);
+
+  // Secondary account balance adjustment — amount + opened toggle per type
+  const [secondaryDelta, setSecondaryDelta] = useState<Record<string, string>>({
+    checking: "",
+    savings: "",
+    retirement: "",
+  });
 
   const [form, setForm] = useState({
     first_name: "",
@@ -163,6 +178,34 @@ export default function UserProfile() {
     const next = Number(p.balance ?? 0) + sign * v;
     await update({ balance: next } as any);
     setDelta("");
+  };
+
+  /**
+   * Adjust a secondary account's balance (checking/savings/retirement).
+   * Writes directly to the corresponding `{type}_balance` column on
+   * profiles — the same column the dashboard aggregate reads from, so the
+   * primary card's total updates automatically without any extra wiring.
+   */
+  const adjustSecondaryBalance = async (
+    type: "checking" | "savings" | "retirement",
+    sign: 1 | -1
+  ) => {
+    const v = Number(secondaryDelta[type]);
+    if (!v || isNaN(v)) return toast.error("Enter an amount");
+    const balanceCol = `${type}_balance`;
+    const current = Number((p as any)[balanceCol] ?? 0);
+    const next = Math.max(0, current + sign * v);
+    await update({ [balanceCol]: next } as any);
+    setSecondaryDelta((prev) => ({ ...prev, [type]: "" }));
+  };
+
+  /** Toggle whether a secondary account is marked opened — lets admin open/close on the user's behalf. */
+  const toggleSecondaryOpened = async (
+    type: "checking" | "savings" | "retirement",
+    opened: boolean
+  ) => {
+    const openedCol = `${type}_opened`;
+    await update({ [openedCol]: opened } as any);
   };
 
   const setKyc = async (kyc_status: string) => update({ kyc_status });
@@ -396,9 +439,9 @@ export default function UserProfile() {
         </TabsContent>
 
         {/* ── BALANCE TAB ── */}
-        <TabsContent value="balance">
+        <TabsContent value="balance" className="space-y-5">
           <Card className="space-y-3 p-4">
-            <Label>Adjust balance ({fmtMoney(balance, p.currency || "USD")})</Label>
+            <Label>Adjust primary balance ({fmtMoney(balance, p.currency || "USD")})</Label>
             <Input
               type="number"
               placeholder="Amount"
@@ -413,6 +456,72 @@ export default function UserProfile() {
                 <Minus className="mr-1 h-4 w-4" /> Subtract
               </Button>
             </div>
+          </Card>
+
+          {/* Secondary accounts — checking / savings / retirement */}
+          <Card className="space-y-4 p-4">
+            <h3 className="text-lg font-bold">Secondary accounts</h3>
+            <p className="text-xs text-muted-foreground">
+              Adjusting a secondary account's balance also updates the
+              user's dashboard total automatically, since the primary
+              card's balance is the sum of all opened accounts.
+            </p>
+
+            {SECONDARY_ACCOUNT_TYPES.map(({ key, label }) => {
+              const balanceCol = `${key}_balance`;
+              const openedCol = `${key}_opened`;
+              const currentBalance = Number((p as any)[balanceCol] ?? 0);
+              const isOpened = (p as any)[openedCol] === true;
+
+              return (
+                <div key={key} className="space-y-2 rounded-md border border-border p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold">{label} account</p>
+                      <p className="text-xs text-muted-foreground">
+                        {fmtMoney(currentBalance, p.currency || "USD")}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={isOpened ? "outline" : "default"}
+                      onClick={() => toggleSecondaryOpened(key, !isOpened)}
+                    >
+                      {isOpened ? (
+                        <>
+                          <Unlock className="mr-1 h-4 w-4" /> Opened
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="mr-1 h-4 w-4" /> Not opened
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  <Input
+                    type="number"
+                    placeholder="Amount"
+                    value={secondaryDelta[key]}
+                    onChange={(e) =>
+                      setSecondaryDelta((prev) => ({ ...prev, [key]: e.target.value }))
+                    }
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button size="sm" onClick={() => adjustSecondaryBalance(key, 1)}>
+                      <Plus className="mr-1 h-4 w-4" /> Add
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => adjustSecondaryBalance(key, -1)}
+                    >
+                      <Minus className="mr-1 h-4 w-4" /> Subtract
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
           </Card>
         </TabsContent>
 
