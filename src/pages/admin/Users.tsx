@@ -13,18 +13,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MoreVertical, Eye, Ban, Trash2, Hash, Search } from "lucide-react";
+import { MoreVertical, Eye, Ban, Trash2, CheckCircle2, Search } from "lucide-react";
 import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
@@ -39,12 +29,19 @@ const statusColor = (s: string) =>
     ? "bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))]"
     : "bg-destructive/15 text-destructive";
 
+const applicationStatusColor = (s: string) =>
+  s === "approved"
+    ? "bg-[hsl(var(--success))]/15 text-[hsl(var(--success))]"
+    : s === "rejected"
+    ? "bg-destructive/15 text-destructive"
+    : "bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))]";
+
 export default function Users() {
   const [users, setUsers] = useState<Profile[]>([]);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "kyc" | "blocked">("all");
   const [loading, setLoading] = useState(true);
-  const [confirm, setConfirm] = useState<{ kind: "block" | "delete"; user: Profile } | null>(null);
+  const [confirm, setConfirm] = useState<{ kind: "block" | "delete" | "approve"; user: Profile } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -64,7 +61,7 @@ export default function Users() {
   const filtered = useMemo(
     () =>
       users.filter((u) => {
-        if (filter === "pending" && u.status !== "pending") return false;
+        if (filter === "pending" && (u as any).application_status !== "pending") return false;
         if (filter === "blocked" && u.status !== "blocked") return false;
         if (filter === "kyc" && u.kyc_status !== "pending") return false;
         if (!q) return true;
@@ -88,6 +85,31 @@ export default function Users() {
       else toast.success("User blocked · Email sent");
     } else {
       toast.success("User blocked");
+    }
+    load();
+  };
+
+  const doApprove = async (u: Profile, sendMail: boolean) => {
+    const { error } = await supabase
+      .from("profiles")
+      .update({ application_status: "approved" })
+      .eq("id", u.id);
+    if (error) return toast.error(error.message);
+    if (sendMail && u.email) {
+      const res = await sendEmail({
+        email: u.email,
+        first_name: u.first_name ?? "",
+        subject: "Your Flexiq Verve Application Has Been Approved",
+        message:
+`Great news — your Flexiq Verve account application has been approved. You can now log in and access your dashboard.
+
+Kind Regards,
+Flexiq Verve Support Team`,
+      });
+      if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+      else toast.success("User approved · Email sent");
+    } else {
+      toast.success("User approved");
     }
     load();
   };
@@ -127,75 +149,87 @@ export default function Users() {
         <Card className="p-6 text-center text-sm text-muted-foreground">No users found</Card>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((u) => (
-            <Card key={u.id} className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate font-semibold">{fullName(u)}</p>
-                    <Badge className={statusColor(u.status)} variant="outline">
-                      {u.status}
-                    </Badge>
+          {filtered.map((u) => {
+            const appStatus = (u as any).application_status ?? "pending";
+            return (
+              <Card key={u.id} className="p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="truncate font-semibold">{fullName(u)}</p>
+                      <Badge className={statusColor(u.status)} variant="outline">
+                        {u.status}
+                      </Badge>
+                      <Badge className={applicationStatusColor(appStatus)} variant="outline">
+                        {appStatus}
+                      </Badge>
+                    </div>
+                    <p className="truncate text-xs text-muted-foreground">{u.email}</p>
+                    <p className="mt-2 text-lg font-bold">
+                      {fmtMoney(u.balance ?? u.total_balance, u.currency || "USD")}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      #{u.account_number} · KYC: {u.kyc_status}
+                    </p>
                   </div>
-                  <p className="truncate text-xs text-muted-foreground">{u.email}</p>
-                  <p className="mt-2 text-lg font-bold">
-                    {fmtMoney(u.balance ?? u.total_balance, u.currency || "USD")}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    #{u.account_number} · KYC: {u.kyc_status}
-                  </p>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem asChild>
+                        <Link to={`/admin/users/${u.id}`}>
+                          <Eye className="mr-2 h-4 w-4" /> View user
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setConfirm({ kind: "block", user: u })}>
+                        <Ban className="mr-2 h-4 w-4" /> Block
+                      </DropdownMenuItem>
+                      {appStatus === "pending" && (
+                        <DropdownMenuItem onClick={() => setConfirm({ kind: "approve", user: u })}>
+                          <CheckCircle2 className="mr-2 h-4 w-4" /> Approve
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={() => setConfirm({ kind: "delete", user: u })}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" /> Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem asChild>
-                      <Link to={`/admin/users/${u.id}`}>
-                        <Eye className="mr-2 h-4 w-4" /> View user
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setConfirm({ kind: "block", user: u })}>
-                      <Ban className="mr-2 h-4 w-4" /> Block
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        navigator.clipboard.writeText(u.account_number || "");
-                        toast.success("Copied");
-                      }}
-                    >
-                      <Hash className="mr-2 h-4 w-4" /> Copy account #
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive"
-                      onClick={() => setConfirm({ kind: "delete", user: u })}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" /> Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
 
       <ConfirmActionDialog
         open={!!confirm}
         onOpenChange={(o) => !o && setConfirm(null)}
-        title={confirm?.kind === "delete" ? "Delete User" : "Block User"}
+        title={
+          confirm?.kind === "delete"
+            ? "Delete User"
+            : confirm?.kind === "approve"
+            ? "Approve User"
+            : "Block User"
+        }
         description={
           confirm?.kind === "delete"
             ? `Do you want to permanently delete ${confirm?.user.email}?`
+            : confirm?.kind === "approve"
+            ? `Approve ${confirm?.user.email}? They'll be able to log in once approved.`
             : `Do you want to block ${confirm?.user.email}?`
         }
-        showSendMail={confirm?.kind === "block"}
+        showSendMail={confirm?.kind === "block" || confirm?.kind === "approve"}
         onConfirm={async (sendMail) => {
           if (!confirm) return;
           if (confirm.kind === "delete") await doDelete(confirm.user);
+          else if (confirm.kind === "approve") await doApprove(confirm.user, sendMail);
           else await doBlock(confirm.user, sendMail);
           setConfirm(null);
         }}
