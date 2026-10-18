@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 // TESTING value. Set back to 30 * 60 * 1000 before shipping.
-const TIMEOUT_MS = 2 * 60 * 1000;
+const TIMEOUT_MS = 30 * 60 * 1000;
 const DEBUG = true; // logs "[idle] ..." in the console; set false when done
 
 // Where to land after logout.
