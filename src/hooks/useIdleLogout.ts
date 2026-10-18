@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
-const IDLE_LIMIT_MS = 30 * 60 * 1000;
+const IDLE_LIMIT_MS = 1 * 60 * 1000;
 const CHECK_INTERVAL_MS = 60 * 1000;
 const STORAGE_KEY = "lastActivity";
 
