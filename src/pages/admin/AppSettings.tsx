@@ -63,6 +63,7 @@ export default function AppSettings() {
   // Users + per-user deposit access
   const [users, setUsers] = useState<UserRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   // Confirmation modal for the per-user switch
   const [target, setTarget] = useState<UserRow | null>(null);
@@ -102,6 +103,19 @@ export default function AppSettings() {
     () => users.filter((u) => u.receive_enabled).length,
     [users]
   );
+
+  // Users with deposits on go first; otherwise keep the original order.
+  const sortedUsers = useMemo(
+    () =>
+      [...users].sort(
+        (a, b) => Number(b.receive_enabled) - Number(a.receive_enabled)
+      ),
+    [users]
+  );
+
+  const COLLAPSED_COUNT = 3;
+  const visibleUsers = expanded ? sortedUsers : sortedUsers.slice(0, COLLAPSED_COUNT);
+  const hiddenCount = Math.max(0, sortedUsers.length - COLLAPSED_COUNT);
 
   const selectedUser = useMemo(
     () => users.find((u) => u.id === selectedId) ?? null,
@@ -210,11 +224,11 @@ export default function AppSettings() {
           {enabledCount} of {users.length} users enabled
         </p>
 
-        <div className="max-h-72 divide-y overflow-y-auto rounded-md border">
+        <div className="max-h-80 divide-y overflow-y-auto rounded-md border">
           {users.length === 0 ? (
             <p className="p-3 text-sm text-muted-foreground">No users yet.</p>
           ) : (
-            users.map((u) => {
+            visibleUsers.map((u) => {
               const active = u.id === selectedId;
               return (
                 <button
@@ -238,6 +252,18 @@ export default function AppSettings() {
             })
           )}
         </div>
+
+        {hiddenCount > 0 && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="w-full"
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? "Show less" : `Show all users (${hiddenCount} more)`}
+          </Button>
+        )}
       </Card>
 
       {selectedUser && (
