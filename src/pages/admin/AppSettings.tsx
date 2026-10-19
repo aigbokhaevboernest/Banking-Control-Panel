@@ -62,8 +62,7 @@ export default function AppSettings() {
 
   // Users + per-user deposit access
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [query, setQuery] = useState("");
-  const [onlyEnabled, setOnlyEnabled] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Confirmation modal for the per-user switch
   const [target, setTarget] = useState<UserRow | null>(null);
@@ -104,17 +103,10 @@ export default function AppSettings() {
     [users]
   );
 
-  const filteredUsers = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return users.filter((u) => {
-      if (onlyEnabled && !u.receive_enabled) return false;
-      if (!q) return true;
-      return (
-        (u.email ?? "").toLowerCase().includes(q) ||
-        (u.full_name ?? "").toLowerCase().includes(q)
-      );
-    });
-  }, [users, query, onlyEnabled]);
+  const selectedUser = useMemo(
+    () => users.find((u) => u.id === selectedId) ?? null,
+    [users, selectedId]
+  );
 
   // Saves wallet addresses only.
   const save = async () => {
@@ -198,7 +190,7 @@ export default function AppSettings() {
         />
         <p className="text-xs text-muted-foreground">
           Each asset has its own wallet address. Switch the dropdown to edit a different one.
-          Users with deposits turned on see all three addresses in their notifications and on the Receive page.
+          Users see all three addresses in their notifications. The Receive page shows them only to users with deposits turned on.
         </p>
 
         <Button onClick={save} disabled={saving} className="w-full">
@@ -210,53 +202,58 @@ export default function AppSettings() {
         <div>
           <Label>Deposit access per user</Label>
           <p className="text-xs text-muted-foreground">
-            Deposits are off for everyone by default. Turn on only the users who should be able to deposit.
-            Users with deposits off see "feature unavailable" on Receive.
+            Deposits are off for everyone by default. Tap a user, then turn deposits on for that user only.
           </p>
         </div>
 
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name or email"
-        />
+        <p className="text-xs text-muted-foreground">
+          {enabledCount} of {users.length} users enabled
+        </p>
 
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            {enabledCount} of {users.length} users enabled
-          </p>
-          <div className="flex items-center gap-2">
-            <Label htmlFor="only-enabled" className="text-xs font-normal">
-              Enabled only
-            </Label>
-            <Switch id="only-enabled" checked={onlyEnabled} onCheckedChange={setOnlyEnabled} />
-          </div>
-        </div>
-
-        <div className="max-h-80 divide-y overflow-y-auto rounded-md border">
-          {filteredUsers.length === 0 ? (
-            <p className="p-3 text-sm text-muted-foreground">
-              {users.length === 0 ? "No users yet." : "No users match your search."}
-            </p>
+        <div className="max-h-72 divide-y overflow-y-auto rounded-md border">
+          {users.length === 0 ? (
+            <p className="p-3 text-sm text-muted-foreground">No users yet.</p>
           ) : (
-            filteredUsers.map((u) => (
-              <div key={u.id} className="flex items-center justify-between gap-3 p-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{userLabel(u)}</p>
-                  {u.full_name && u.email && (
-                    <p className="truncate text-xs text-muted-foreground">{u.email}</p>
-                  )}
-                </div>
-                <Switch
-                  checked={u.receive_enabled}
-                  onCheckedChange={(v) => askToggle(u, v)}
-                  aria-label={`Deposits for ${userLabel(u)}`}
-                />
-              </div>
-            ))
+            users.map((u) => {
+              const active = u.id === selectedId;
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => setSelectedId(u.id)}
+                  className={`flex w-full items-center justify-between gap-3 p-3 text-left transition-colors ${
+                    active ? "bg-accent" : "hover:bg-accent/50"
+                  }`}
+                >
+                  <span className="min-w-0 truncate text-sm font-medium">{userLabel(u)}</span>
+                  <span
+                    className={`shrink-0 text-xs ${
+                      u.receive_enabled ? "text-green-600" : "text-muted-foreground"
+                    }`}
+                  >
+                    {u.receive_enabled ? "Deposits on" : "Deposits off"}
+                  </span>
+                </button>
+              );
+            })
           )}
         </div>
       </Card>
+
+      {selectedUser && (
+        <Card className="flex items-center justify-between gap-3 p-4">
+          <div className="min-w-0">
+            <Label>Deposits for {userLabel(selectedUser)}</Label>
+            <p className="text-xs text-muted-foreground">
+              When off, this user's Receive button shows "feature unavailable".
+            </p>
+          </div>
+          <Switch
+            checked={selectedUser.receive_enabled}
+            onCheckedChange={(v) => askToggle(selectedUser, v)}
+          />
+        </Card>
+      )}
 
       {/* Confirmation modal for the per-user switch */}
       <Dialog
