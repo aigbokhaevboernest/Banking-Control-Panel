@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   ArrowLeft,
+  ChevronDown,
   Eye,
   EyeOff,
   Plus,
@@ -38,6 +39,7 @@ import {
   Save,
   Lock,
   Unlock,
+  Sparkles,
 } from "lucide-react";
 import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
@@ -53,6 +55,41 @@ const SECONDARY_ACCOUNT_TYPES = [
   { key: "savings", label: "Savings" },
   { key: "retirement", label: "Retirement" },
 ] as const;
+
+const CURRENCIES = [
+  { code: "USD", name: "US Dollar" },
+  { code: "EUR", name: "Euro" },
+  { code: "GBP", name: "British Pound" },
+  { code: "CAD", name: "Canadian Dollar" },
+  { code: "AUD", name: "Australian Dollar" },
+  { code: "NZD", name: "New Zealand Dollar" },
+  { code: "CHF", name: "Swiss Franc" },
+  { code: "JPY", name: "Japanese Yen" },
+  { code: "CNY", name: "Chinese Yuan" },
+  { code: "HKD", name: "Hong Kong Dollar" },
+  { code: "SGD", name: "Singapore Dollar" },
+  { code: "INR", name: "Indian Rupee" },
+  { code: "PKR", name: "Pakistani Rupee" },
+  { code: "KRW", name: "South Korean Won" },
+  { code: "THB", name: "Thai Baht" },
+  { code: "MYR", name: "Malaysian Ringgit" },
+  { code: "IDR", name: "Indonesian Rupiah" },
+  { code: "PHP", name: "Philippine Peso" },
+  { code: "AED", name: "UAE Dirham" },
+  { code: "SAR", name: "Saudi Riyal" },
+  { code: "TRY", name: "Turkish Lira" },
+  { code: "NGN", name: "Nigerian Naira" },
+  { code: "GHS", name: "Ghanaian Cedi" },
+  { code: "KES", name: "Kenyan Shilling" },
+  { code: "ZAR", name: "South African Rand" },
+  { code: "EGP", name: "Egyptian Pound" },
+  { code: "BRL", name: "Brazilian Real" },
+  { code: "MXN", name: "Mexican Peso" },
+  { code: "SEK", name: "Swedish Krona" },
+  { code: "NOK", name: "Norwegian Krone" },
+  { code: "DKK", name: "Danish Krone" },
+  { code: "PLN", name: "Polish Zloty" },
+];
 
 import { statusBadgeClasses } from "@/lib/statusColors";
 const statusBadge = (s: string) => statusBadgeClasses(s);
@@ -83,6 +120,10 @@ export default function UserProfile() {
   const [billing, setBilling] = useState({ type: "General", subject: "", body: "" });
   const [billingError, setBillingError] = useState("");
   const [confirmBilling, setConfirmBilling] = useState(false);
+
+  // Collapsible sections — both collapsed by default
+  const [secondaryOpen, setSecondaryOpen] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
 
   // Secondary account balance adjustment — amount + opened toggle per type
   const [secondaryDelta, setSecondaryDelta] = useState<Record<string, string>>({
@@ -215,6 +256,15 @@ export default function UserProfile() {
     setPendingCode({ type: newCode.type, code: newCode.code.toUpperCase() });
   };
 
+  /** Fill the code field with a random 8-character code (no look-alike characters). */
+  const generateCode = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const bytes = new Uint32Array(8);
+    crypto.getRandomValues(bytes);
+    const code = Array.from(bytes, (b) => chars[b % chars.length]).join("");
+    setNewCode((prev) => ({ ...prev, code }));
+  };
+
   const toggleCode = async (c: WithdrawalCode, enabled: boolean) => {
     if (c.code_type === "COT") return toast.error("COT cannot be disabled");
     await supabase.from("withdrawal_codes").update({ enabled }).eq("id", c.id);
@@ -231,6 +281,8 @@ export default function UserProfile() {
     load();
   };
 
+  // Saves the code. The email is sent only when sendMail is true
+  // (i.e. the admin ticked the send email option in the confirm modal).
   const saveCodeWithEmail = async (sendMail: boolean) => {
     if (!pendingCode) return;
     const { type, code } = pendingCode;
@@ -292,7 +344,19 @@ export default function UserProfile() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
-  const balance = p.balance ?? 0;
+  // Balances: the total is the primary balance plus all secondary balances.
+  const primaryBalance = Number(p.balance ?? 0);
+  const secondaryTotal = SECONDARY_ACCOUNT_TYPES.reduce(
+    (sum, { key }) => sum + Number((p as any)[`${key}_balance`] ?? 0),
+    0
+  );
+  const totalBalance = primaryBalance + secondaryTotal;
+  const currencyCode = p.currency || "USD";
+
+  // If a user already has a currency that isn't in the list, keep it selectable.
+  const currencyOptions = CURRENCIES.some((c) => c.code === form.currency) || !form.currency
+    ? CURRENCIES
+    : [{ code: form.currency, name: "Current" }, ...CURRENCIES];
 
   return (
     <div className="space-y-4">
@@ -310,7 +374,7 @@ export default function UserProfile() {
             <p className="text-xs text-muted-foreground">#{p.account_number}</p>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-bold">{fmtMoney(balance, p.currency || "USD")}</p>
+            <p className="text-2xl font-bold">{fmtMoney(totalBalance, currencyCode)}</p>
             <div className="mt-1 flex flex-wrap justify-end gap-1">
               <Badge variant="outline" className={statusBadge(p.status)}>{p.status}</Badge>
               <Badge variant="outline">KYC: {p.kyc_status}</Badge>
@@ -357,7 +421,19 @@ export default function UserProfile() {
             </div>
             <div className="space-y-1.5">
               <Label>Currency</Label>
-              <Input value={form.currency} onChange={(e) => handleFormChange("currency", e.target.value)} />
+              <Select
+                value={form.currency || undefined}
+                onValueChange={(v) => handleFormChange("currency", v)}
+              >
+                <SelectTrigger><SelectValue placeholder="Select currency" /></SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {currencyOptions.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>
+                      {c.code} — {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Username</Label>
@@ -441,87 +517,119 @@ export default function UserProfile() {
         {/* ── BALANCE TAB ── */}
         <TabsContent value="balance" className="space-y-5">
           <Card className="space-y-3 p-4">
-            <Label>Adjust primary balance ({fmtMoney(balance, p.currency || "USD")})</Label>
-            <Input
-              type="number"
-              placeholder="Amount"
-              value={delta}
-              onChange={(e) => setDelta(e.target.value)}
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <Button onClick={() => adjustBalance(1)}>
-                <Plus className="mr-1 h-4 w-4" /> Add
-              </Button>
-              <Button variant="outline" onClick={() => adjustBalance(-1)}>
-                <Minus className="mr-1 h-4 w-4" /> Subtract
-              </Button>
+            <div>
+              <Label>Total balance</Label>
+              <p className="text-2xl font-bold">{fmtMoney(totalBalance, currencyCode)}</p>
+              <p className="text-xs text-muted-foreground">
+                Primary {fmtMoney(primaryBalance, currencyCode)} + secondary accounts {fmtMoney(secondaryTotal, currencyCode)}
+              </p>
+            </div>
+
+            <div className="space-y-3 border-t border-border pt-3">
+              <Label>Adjust primary balance ({fmtMoney(primaryBalance, currencyCode)})</Label>
+              <Input
+                type="number"
+                placeholder="Amount"
+                value={delta}
+                onChange={(e) => setDelta(e.target.value)}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={() => adjustBalance(1)}>
+                  <Plus className="mr-1 h-4 w-4" /> Add
+                </Button>
+                <Button variant="outline" onClick={() => adjustBalance(-1)}>
+                  <Minus className="mr-1 h-4 w-4" /> Subtract
+                </Button>
+              </div>
             </div>
           </Card>
 
-          {/* Secondary accounts — checking / savings / retirement */}
-          <Card className="space-y-4 p-4">
-            <h3 className="text-lg font-bold">Secondary accounts</h3>
-            <p className="text-xs text-muted-foreground">
-              Adjusting a secondary account's balance also updates the
-              user's dashboard total automatically, since the primary
-              card's balance is the sum of all opened accounts.
-            </p>
+          {/* Secondary accounts — checking / savings / retirement (collapsed by default) */}
+          <Card className="p-4">
+            <button
+              type="button"
+              onClick={() => setSecondaryOpen((o) => !o)}
+              aria-expanded={secondaryOpen}
+              className="flex w-full items-center justify-between gap-3 text-left"
+            >
+              <div>
+                <h3 className="text-lg font-bold">Secondary accounts</h3>
+                <p className="text-xs text-muted-foreground">
+                  {fmtMoney(secondaryTotal, currencyCode)} across 3 accounts
+                </p>
+              </div>
+              <ChevronDown
+                className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${
+                  secondaryOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
 
-            {SECONDARY_ACCOUNT_TYPES.map(({ key, label }) => {
-              const balanceCol = `${key}_balance`;
-              const openedCol = `${key}_opened`;
-              const currentBalance = Number((p as any)[balanceCol] ?? 0);
-              const isOpened = (p as any)[openedCol] === true;
+            {secondaryOpen && (
+              <div className="mt-4 space-y-4">
+                <p className="text-xs text-muted-foreground">
+                  Adjusting a secondary account's balance also updates the
+                  user's total automatically, since the total is the primary
+                  balance plus all secondary balances.
+                </p>
 
-              return (
-                <div key={key} className="space-y-2 rounded-md border border-border p-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold">{label} account</p>
-                      <p className="text-xs text-muted-foreground">
-                        {fmtMoney(currentBalance, p.currency || "USD")}
-                      </p>
+                {SECONDARY_ACCOUNT_TYPES.map(({ key, label }) => {
+                  const balanceCol = `${key}_balance`;
+                  const openedCol = `${key}_opened`;
+                  const currentBalance = Number((p as any)[balanceCol] ?? 0);
+                  const isOpened = (p as any)[openedCol] === true;
+
+                  return (
+                    <div key={key} className="space-y-2 rounded-md border border-border p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold">{label} account</p>
+                          <p className="text-xs text-muted-foreground">
+                            {fmtMoney(currentBalance, currencyCode)}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={isOpened ? "outline" : "default"}
+                          onClick={() => toggleSecondaryOpened(key, !isOpened)}
+                        >
+                          {isOpened ? (
+                            <>
+                              <Unlock className="mr-1 h-4 w-4" /> Opened
+                            </>
+                          ) : (
+                            <>
+                              <Lock className="mr-1 h-4 w-4" /> Not opened
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      <Input
+                        type="number"
+                        placeholder="Amount"
+                        value={secondaryDelta[key]}
+                        onChange={(e) =>
+                          setSecondaryDelta((prev) => ({ ...prev, [key]: e.target.value }))
+                        }
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button size="sm" onClick={() => adjustSecondaryBalance(key, 1)}>
+                          <Plus className="mr-1 h-4 w-4" /> Add
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => adjustSecondaryBalance(key, -1)}
+                        >
+                          <Minus className="mr-1 h-4 w-4" /> Subtract
+                        </Button>
+                      </div>
                     </div>
-                    <Button
-                      size="sm"
-                      variant={isOpened ? "outline" : "default"}
-                      onClick={() => toggleSecondaryOpened(key, !isOpened)}
-                    >
-                      {isOpened ? (
-                        <>
-                          <Unlock className="mr-1 h-4 w-4" /> Opened
-                        </>
-                      ) : (
-                        <>
-                          <Lock className="mr-1 h-4 w-4" /> Not opened
-                        </>
-                      )}
-                    </Button>
-                  </div>
-
-                  <Input
-                    type="number"
-                    placeholder="Amount"
-                    value={secondaryDelta[key]}
-                    onChange={(e) =>
-                      setSecondaryDelta((prev) => ({ ...prev, [key]: e.target.value }))
-                    }
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button size="sm" onClick={() => adjustSecondaryBalance(key, 1)}>
-                      <Plus className="mr-1 h-4 w-4" /> Add
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => adjustSecondaryBalance(key, -1)}
-                    >
-                      <Minus className="mr-1 h-4 w-4" /> Subtract
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
           </Card>
         </TabsContent>
 
@@ -625,6 +733,11 @@ export default function UserProfile() {
                 value={newCode.code}
                 onChange={(e) => setNewCode({ ...newCode, code: e.target.value })}
               />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant="outline" onClick={generateCode}>
+                <Sparkles className="mr-1 h-4 w-4" /> Auto generate
+              </Button>
               <Button onClick={addCode}>Save</Button>
             </div>
           </Card>
@@ -664,44 +777,61 @@ export default function UserProfile() {
             ))}
           </div>
 
-          {/* ── Send Billing Email ── */}
-          <Card className="space-y-3 p-4 mt-4 border-t-4 border-t-[#5B6EF5]">
-            <h3 className="text-lg font-bold">Send Billing Email</h3>
-            <div className="space-y-1.5">
-              <Label>Code Type</Label>
-              <Select value={billing.type} onValueChange={handleBillingType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {["COT", "TAX", "ITC", "IMF", "General"].map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Subject</Label>
-              <Input
-                value={billing.subject}
-                onChange={(e) => { setBilling({ ...billing, subject: e.target.value }); setBillingError(""); }}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Email Body</Label>
-              <Textarea
-                rows={6}
-                placeholder="Write the full email message to send to this user..."
-                value={billing.body}
-                onChange={(e) => { setBilling({ ...billing, body: e.target.value }); setBillingError(""); }}
-              />
-            </div>
-            {billingError && <p className="text-xs text-destructive">{billingError}</p>}
-            <Button
-              onClick={openBillingConfirm}
-              className="w-full text-white hover:opacity-90"
-              style={{ backgroundColor: "#5B6EF5" }}
+          {/* ── Send Billing Email (collapsed by default) ── */}
+          <Card className="p-4 mt-4 border-t-4 border-t-[#5B6EF5]">
+            <button
+              type="button"
+              onClick={() => setBillingOpen((o) => !o)}
+              aria-expanded={billingOpen}
+              className="flex w-full items-center justify-between gap-3 text-left"
             >
-              Send Email
-            </Button>
+              <h3 className="text-lg font-bold">Send Billing Email</h3>
+              <ChevronDown
+                className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${
+                  billingOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {billingOpen && (
+              <div className="mt-4 space-y-3">
+                <div className="space-y-1.5">
+                  <Label>Code Type</Label>
+                  <Select value={billing.type} onValueChange={handleBillingType}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {["COT", "TAX", "ITC", "IMF", "General"].map((t) => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Subject</Label>
+                  <Input
+                    value={billing.subject}
+                    onChange={(e) => { setBilling({ ...billing, subject: e.target.value }); setBillingError(""); }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Email Body</Label>
+                  <Textarea
+                    rows={6}
+                    placeholder="Write the full email message to send to this user..."
+                    value={billing.body}
+                    onChange={(e) => { setBilling({ ...billing, body: e.target.value }); setBillingError(""); }}
+                  />
+                </div>
+                {billingError && <p className="text-xs text-destructive">{billingError}</p>}
+                <Button
+                  onClick={openBillingConfirm}
+                  className="w-full text-white hover:opacity-90"
+                  style={{ backgroundColor: "#5B6EF5" }}
+                >
+                  Send Email
+                </Button>
+              </div>
+            )}
           </Card>
         </TabsContent>
       </Tabs>
@@ -769,17 +899,17 @@ export default function UserProfile() {
         }}
       />
 
-      {/* Delete dialog */}
-      {/* Code save confirm */}
+      {/* Code save confirm: Save / Cancel, email only sent if "send mail" is ticked */}
       <ConfirmActionDialog
         open={!!pendingCode}
         onOpenChange={(o) => !o && setPendingCode(null)}
         title={pendingCode ? `Save ${pendingCode.type} Code` : "Save Code"}
         description={
           pendingCode
-            ? `Do you want to save this ${pendingCode.type} code and notify the user?`
+            ? `Save the ${pendingCode.type} code ${pendingCode.code}? Tick the send mail option to also email it to the user.`
             : ""
         }
+        confirmLabel="Save"
         onConfirm={async (sm) => { await saveCodeWithEmail(sm); setPendingCode(null); }}
       />
 
