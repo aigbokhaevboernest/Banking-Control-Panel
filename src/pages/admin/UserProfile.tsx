@@ -47,6 +47,7 @@ import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
 import { sendEmail, getUserEmail } from "@/lib/sendEmail";
 import { accountStatusEmail, kycEmail, withdrawalCodeEmail, billingEmail } from "@/lib/emailTemplates";
 import { Textarea } from "@/components/ui/textarea";
+import { getBalanceBreakdown } from "@/hooks/useTotalBalance";
 
 const CODE_TYPES = ["COT", "TAX", "ITC", "IMF"] as const;
 
@@ -231,6 +232,7 @@ export default function UserProfile() {
     type: "checking" | "savings" | "retirement",
     sign: 1 | -1
   ) => {
+    if ((p as any)[`${type}_opened`] !== true) return toast.error("Open this account first");
     const v = Number(secondaryDelta[type]);
     if (!v || isNaN(v)) return toast.error("Enter an amount");
     const balanceCol = `${type}_balance`;
@@ -344,14 +346,20 @@ export default function UserProfile() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
-  // Balances: the total is the primary balance plus all secondary balances.
-  const primaryBalance = Number(p.balance ?? 0);
-  const secondaryTotal = SECONDARY_ACCOUNT_TYPES.reduce(
-    (sum, { key }) => sum + Number((p as any)[`${key}_balance`] ?? 0),
-    0
-  );
-  const totalBalance = primaryBalance + secondaryTotal;
+  // Same rule as the user's dashboard: total = primary + every OPENED secondary account.
+  const bd = getBalanceBreakdown(p);
+  const primaryBalance = bd.own;
+  const secondaryTotal = bd.checking + bd.savings + bd.retirement; // opened accounts only
+  const totalBalance = bd.total;
   const currencyCode = p.currency || "USD";
+
+  // The account type chosen at signup is the user's primary account and is not
+  // shown as a secondary card, so exactly 2 secondary cards are listed.
+  // Business (or anything unknown) is treated as Checking-primary, so such
+  // users still get exactly 2 secondary cards: Savings and Retirement.
+  const signupType = String((p as any).account_type ?? "").toLowerCase();
+  const primaryType = SECONDARY_ACCOUNT_TYPES.some((a) => a.key === signupType) ? signupType : "checking";
+  const visibleSecondary = SECONDARY_ACCOUNT_TYPES.filter(({ key }) => key !== primaryType);
 
   // If a user already has a currency that isn't in the list, keep it selectable.
   const currencyOptions = CURRENCIES.some((c) => c.code === form.currency) || !form.currency
@@ -521,7 +529,7 @@ export default function UserProfile() {
               <Label>Total balance</Label>
               <p className="text-2xl font-bold">{fmtMoney(totalBalance, currencyCode)}</p>
               <p className="text-xs text-muted-foreground">
-                Primary {fmtMoney(primaryBalance, currencyCode)} + secondary accounts {fmtMoney(secondaryTotal, currencyCode)}
+                Primary{signupType ? ` (${signupType})` : ""} {fmtMoney(primaryBalance, currencyCode)} + opened secondary accounts {fmtMoney(secondaryTotal, currencyCode)}
               </p>
             </div>
 
@@ -555,7 +563,7 @@ export default function UserProfile() {
               <div>
                 <h3 className="text-lg font-bold">Secondary accounts</h3>
                 <p className="text-xs text-muted-foreground">
-                  {fmtMoney(secondaryTotal, currencyCode)} across 3 accounts
+                  {fmtMoney(secondaryTotal, currencyCode)} counted from opened accounts
                 </p>
               </div>
               <ChevronDown
@@ -569,11 +577,11 @@ export default function UserProfile() {
               <div className="mt-4 space-y-4">
                 <p className="text-xs text-muted-foreground">
                   Adjusting a secondary account's balance also updates the
-                  user's total automatically, since the total is the primary
-                  balance plus all secondary balances.
+                  user's total automatically, but only for accounts marked
+                  Opened. A balance on a Not opened account is not counted.
                 </p>
 
-                {SECONDARY_ACCOUNT_TYPES.map(({ key, label }) => {
+                {visibleSecondary.map(({ key, label }) => {
                   const balanceCol = `${key}_balance`;
                   const openedCol = `${key}_opened`;
                   const currentBalance = Number((p as any)[balanceCol] ?? 0);
@@ -586,6 +594,7 @@ export default function UserProfile() {
                           <p className="text-sm font-semibold">{label} account</p>
                           <p className="text-xs text-muted-foreground">
                             {fmtMoney(currentBalance, currencyCode)}
+                            {!isOpened && currentBalance > 0 && " · not counted until opened"}
                           </p>
                         </div>
                         <Button
@@ -605,26 +614,34 @@ export default function UserProfile() {
                         </Button>
                       </div>
 
-                      <Input
-                        type="number"
-                        placeholder="Amount"
-                        value={secondaryDelta[key]}
-                        onChange={(e) =>
-                          setSecondaryDelta((prev) => ({ ...prev, [key]: e.target.value }))
-                        }
-                      />
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button size="sm" onClick={() => adjustSecondaryBalance(key, 1)}>
-                          <Plus className="mr-1 h-4 w-4" /> Add
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => adjustSecondaryBalance(key, -1)}
-                        >
-                          <Minus className="mr-1 h-4 w-4" /> Subtract
-                        </Button>
-                      </div>
+                      {isOpened ? (
+                        <>
+                          <Input
+                            type="number"
+                            placeholder="Amount"
+                            value={secondaryDelta[key]}
+                            onChange={(e) =>
+                              setSecondaryDelta((prev) => ({ ...prev, [key]: e.target.value }))
+                            }
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button size="sm" onClick={() => adjustSecondaryBalance(key, 1)}>
+                              <Plus className="mr-1 h-4 w-4" /> Add
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => adjustSecondaryBalance(key, -1)}
+                            >
+                              <Minus className="mr-1 h-4 w-4" /> Subtract
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Mark this account as opened to add or subtract balance.
+                        </p>
+                      )}
                     </div>
                   );
                 })}
