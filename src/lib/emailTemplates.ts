@@ -204,3 +204,11 @@ export function billingEmail(body: string, subject?: string): EmailTemplate {
    message: `${String(body)}${FOOTER}`,
  };
 }
+
+export function passwordChangedEmail(): EmailTemplate {
+ return {
+   subject: "Your Password Was Changed — Flexiq Verve",
+   message: `The password on your Flexiq Verve account has been changed. You can now sign in with your new password. If you did not expect this change, please contact support immediately.${FOOTER}`,
+ };
+}
+
