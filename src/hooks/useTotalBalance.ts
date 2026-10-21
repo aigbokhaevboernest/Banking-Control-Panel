@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { useAccount } from "@/hooks/useAccount";
 
 /**
  * One place that defines "the user's balance".
@@ -62,7 +61,7 @@ export function planDeduction(profile: any, amount: number) {
   return { ok: true as const, patch };
 }
 
-export function useTotalBalance() {
-  const { data: account } = useAccount();
-  return useMemo(() => ({ account: account as any, ...getBalanceBreakdown(account) }), [account]);
+/** Pass the profile row you already loaded; this hook no longer fetches anything itself. */
+export function useTotalBalance(account?: any) {
+  return useMemo(() => ({ account, ...getBalanceBreakdown(account) }), [account]);
 }
