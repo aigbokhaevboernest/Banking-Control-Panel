@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/command";
 import { ArrowDownLeft, ArrowUpRight, Check, ChevronsUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fullName } from "@/lib/format";
+import { fullName, fmtMoney } from "@/lib/format";
 import { toast } from "sonner";
 import type { Profile } from "@/types/db";
 
@@ -37,10 +37,6 @@ const STATUSES = ["completed", "pending", "processing", "failed"];
 function generateReference() {
   const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
   return `TXN-${Date.now()}-${rand}`;
-}
-
-function formatMoney(n: number, currency = "USD") {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(n);
 }
 
 export default function CreateTransaction() {
@@ -187,7 +183,7 @@ export default function CreateTransaction() {
           </Popover>
           {selected && (
             <p className="text-xs text-muted-foreground">
-              Balance: <strong>{formatMoney(Number(selected.balance ?? 0), selected.currency)}</strong>
+              Balance: <strong>{fmtMoney(Number(selected.balance ?? 0), selected.currency)}</strong>
               &nbsp;·&nbsp;Acc: {selected.account_number}
             </p>
           )}
@@ -337,7 +333,7 @@ export default function CreateTransaction() {
                         positive ? "text-success" : ""
                       )}>
                         {positive ? "+" : "−"}
-                        {formatMoney(Math.abs(Number(t.amount)), t.currency)}
+                        {fmtMoney(Math.abs(Number(t.amount)), t.currency)}
                       </td>
                     </tr>
                   );
