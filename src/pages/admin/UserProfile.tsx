@@ -45,9 +45,16 @@ import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
 import { sendEmail, getUserEmail } from "@/lib/sendEmail";
-import { accountStatusEmail, kycEmail, withdrawalCodeEmail, billingEmail } from "@/lib/emailTemplates";
+import {
+  accountStatusEmail,
+  kycEmail,
+  withdrawalCodeEmail,
+  billingEmail,
+  passwordChangedEmail,
+} from "@/lib/emailTemplates";
 import { Textarea } from "@/components/ui/textarea";
 import { getBalanceBreakdown } from "@/hooks/useTotalBalance";
+import { getSecondaryAccountTypes } from "@/lib/accounts";
 
 const CODE_TYPES = ["COT", "TAX", "ITC", "IMF"] as const;
 
@@ -121,6 +128,10 @@ export default function UserProfile() {
   const [billing, setBilling] = useState({ type: "General", subject: "", body: "" });
   const [billingError, setBillingError] = useState("");
   const [confirmBilling, setConfirmBilling] = useState(false);
+
+  // Password change: modal first, then save, then optional email
+  const [pendingPassword, setPendingPassword] = useState<string | null>(null);
+  const [pwdResetKey, setPwdResetKey] = useState(0);
 
   // Collapsible sections — both collapsed by default
   const [secondaryOpen, setSecondaryOpen] = useState(false);
@@ -305,6 +316,29 @@ export default function UserProfile() {
     else toast.success(`${type} code saved · Email sent`);
   };
 
+  // Saves the new password after the admin confirmed in the modal. The
+  // confirmation email (which never contains the password) is sent only
+  // when the send mail option was ticked.
+  const savePasswordWithEmail = async (sendMail: boolean) => {
+    if (!pendingPassword) return;
+    const next = pendingPassword;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ plain_password: next } as any)
+      .eq("id", p.id);
+    if (error) { toast.error(error.message); return; }
+    setP({ ...p, plain_password: next } as any);
+    setPwdResetKey((k) => k + 1);
+
+    if (!sendMail) { toast.success("Password updated"); return; }
+    const email = p.email || (await getUserEmail(p.id));
+    if (!email) { toast.success("Password updated"); return; }
+    const tpl = passwordChangedEmail();
+    const res = await sendEmail({ email, first_name: p.first_name ?? "", subject: tpl.subject, message: tpl.message });
+    if (!res.success) toast.error("Password updated. Email notification could not be sent.");
+    else toast.success("Password updated · Email sent");
+  };
+
   const BILLING_SUBJECTS: Record<string, string> = {
     COT: "Cost of Transfer (COT) — Flexiq Verve",
     TAX: "Tax Clearance — Flexiq Verve",
@@ -353,13 +387,16 @@ export default function UserProfile() {
   const totalBalance = bd.total;
   const currencyCode = p.currency || "USD";
 
-  // The account type chosen at signup is the user's primary account and is not
-  // shown as a secondary card, so exactly 2 secondary cards are listed.
-  // Business (or anything unknown) is treated as Checking-primary, so such
-  // users still get exactly 2 secondary cards: Savings and Retirement.
-  const signupType = String((p as any).account_type ?? "").toLowerCase();
-  const primaryType = SECONDARY_ACCOUNT_TYPES.some((a) => a.key === signupType) ? signupType : "checking";
-  const visibleSecondary = SECONDARY_ACCOUNT_TYPES.filter(({ key }) => key !== primaryType);
+  // Same mapping as the user app: the signup type is the primary account and
+  // is never listed as a secondary. Exactly 2 secondaries are shown.
+  // Business (or unknown) -> Checking + Savings.
+  const signupType = String((p as any).account_type ?? "").trim().toLowerCase();
+  const primaryLabel = signupType
+    ? signupType.charAt(0).toUpperCase() + signupType.slice(1)
+    : "Main";
+  const visibleSecondary = getSecondaryAccountTypes(signupType).map(
+    (key) => SECONDARY_ACCOUNT_TYPES.find((a) => a.key === key)!
+  );
 
   // If a user already has a currency that isn't in the list, keep it selectable.
   const currencyOptions = CURRENCIES.some((c) => c.code === form.currency) || !form.currency
@@ -513,10 +550,11 @@ export default function UserProfile() {
               current={p.plain_password ?? ""}
               show={showPwd}
               onToggle={() => setShowPwd((s) => !s)}
-              onUpdate={async (next) => {
+              resetKey={pwdResetKey}
+              onUpdate={(next) => {
                 if (!next) { toast.error("Enter a new password"); return; }
                 if (next.length < 6) { toast.error("Password must be at least 6 characters"); return; }
-                await update({ plain_password: next } as any);
+                setPendingPassword(next);
               }}
             />
           </Card>
@@ -529,7 +567,7 @@ export default function UserProfile() {
               <Label>Total balance</Label>
               <p className="text-2xl font-bold">{fmtMoney(totalBalance, currencyCode)}</p>
               <p className="text-xs text-muted-foreground">
-                Primary{signupType ? ` (${signupType})` : ""} {fmtMoney(primaryBalance, currencyCode)} + opened secondary accounts {fmtMoney(secondaryTotal, currencyCode)}
+                Primary ({primaryLabel}) {fmtMoney(primaryBalance, currencyCode)} + opened secondary accounts {fmtMoney(secondaryTotal, currencyCode)}
               </p>
             </div>
 
@@ -552,7 +590,7 @@ export default function UserProfile() {
             </div>
           </Card>
 
-          {/* Secondary accounts — checking / savings / retirement (collapsed by default) */}
+          {/* Secondary accounts — only the 2 that apply to this user (collapsed by default) */}
           <Card className="p-4">
             <button
               type="button"
@@ -562,6 +600,9 @@ export default function UserProfile() {
             >
               <div>
                 <h3 className="text-lg font-bold">Secondary accounts</h3>
+                <p className="text-xs text-muted-foreground">
+                  Primary: {primaryLabel} · Secondary: {visibleSecondary.map((s) => s.label).join(" + ")}
+                </p>
                 <p className="text-xs text-muted-foreground">
                   {fmtMoney(secondaryTotal, currencyCode)} counted from opened accounts
                 </p>
@@ -916,6 +957,16 @@ export default function UserProfile() {
         }}
       />
 
+      {/* Password change confirm: save, then email only if "send mail" is ticked */}
+      <ConfirmActionDialog
+        open={!!pendingPassword}
+        onOpenChange={(o) => !o && setPendingPassword(null)}
+        title="Change Password"
+        description={`Change the password for ${p.email}? Tick the send mail option to also email them a confirmation.`}
+        confirmLabel="Change password"
+        onConfirm={async (sm) => { await savePasswordWithEmail(sm); setPendingPassword(null); }}
+      />
+
       {/* Code save confirm: Save / Cancel, email only sent if "send mail" is ticked */}
       <ConfirmActionDialog
         open={!!pendingCode}
@@ -996,16 +1047,20 @@ function PinDisplay({ pin }: { pin: string }) {
 }
 
 function PasswordEditor({
-  current, show, onToggle, onUpdate,
+  current, show, onToggle, onUpdate, resetKey,
 }: {
-  current: string; show: boolean; onToggle: () => void; onUpdate: (next: string) => void | Promise<void>;
+  current: string; show: boolean; onToggle: () => void; onUpdate: (next: string) => void; resetKey: number;
 }) {
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
-  const submit = async () => {
+
+  // Fields clear only after the password was actually saved (resetKey bumps),
+  // so cancelling the confirm modal keeps what the admin typed.
+  useEffect(() => { setNext(""); setConfirm(""); }, [resetKey]);
+
+  const submit = () => {
     if (next !== confirm) { toast.error("Passwords do not match"); return; }
-    await onUpdate(next);
-    setNext(""); setConfirm("");
+    onUpdate(next);
   };
   return (
     <div className="space-y-2 rounded-md border border-border p-3">
