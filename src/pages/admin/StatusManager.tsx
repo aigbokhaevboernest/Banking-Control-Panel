@@ -80,8 +80,24 @@ export function StatusManager({ kind, title }: { kind: Kind; title: string }) {
   );
 
   const applyStatus = async (row: any, newStatus: string, sendMail: boolean) => {
-    const { error } = await supabase.from(table).update({ status: newStatus }).eq("id", row.id);
-    if (error) return toast.error(error.message);
+    const useRpc =
+  table === "transactions" &&
+  ((newStatus === "completed" &&
+    (row.metadata?.internal === true || row.recipient_bank === "Flexiq Verve")) ||
+   (newStatus === "failed" && row.metadata?.debited === true));
+
+const { error } = useRpc
+  ? await (supabase as any).rpc(
+      newStatus === "completed" ? "admin_complete_transfer" : "admin_fail_transfer",
+      { p_tx_id: row.id }
+    )
+  : await supabase.from(table).update({ status: newStatus }).eq("id", row.id);
+if (error) return toast.error(error.message);
+if (useRpc) {
+  qc.invalidateQueries({ queryKey: ["admin-users"] });
+  qc.invalidateQueries({ queryKey: ["profiles"] });
+}
+
     qc.setQueryData<any[]>(["status-manager", kind], (prev) =>
       (prev ?? []).map((x) => (x.id === row.id ? { ...x, status: newStatus } : x))
     );
