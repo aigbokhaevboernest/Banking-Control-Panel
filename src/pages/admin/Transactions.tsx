@@ -100,11 +100,31 @@ export default function Transactions() {
   const items = data ?? [];
 
   const applyStatus = async (row: any, s: string, sendMail: boolean) => {
-    const { error } = await supabase
-      .from(row._table)
-      .update({ status: s })
-      .eq("id", row._raw_id);
-    if (error) return toast.error(error.message);
+    // Internal Flexiq transfers must move money: run the ledger RPC, not a status-only update
+    const isInternalTx =
+      row._table === "transactions" &&
+      (row.metadata?.internal === true || row.recipient_bank === "Flexiq Verve");
+
+    // Failing a transfer that was already debited must refund the sender
+    const needsRefund = s === "failed" && row._table === "transactions" && row.metadata?.debited === true;
+
+    if ((s === "completed" && isInternalTx) || needsRefund) {
+      const { error: rpcErr } = await (supabase as any).rpc(
+        s === "completed" ? "admin_complete_transfer" : "admin_fail_transfer",
+        { p_tx_id: row._raw_id }
+      );
+      if (rpcErr) return toast.error(rpcErr.message);
+      // Balances changed: refresh everything that shows them
+      qc.invalidateQueries({ queryKey: ["admin-transactions"] });
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      qc.invalidateQueries({ queryKey: ["profiles"] });
+    } else {
+      const { error } = await supabase
+        .from(row._table)
+        .update({ status: s })
+        .eq("id", row._raw_id);
+      if (error) return toast.error(error.message);
+    }
 
     qc.setQueryData<Row[]>(["admin-transactions"], (prev) =>
       (prev ?? []).map((x) => (x._uid === row._uid ? { ...x, status: s } : x))
