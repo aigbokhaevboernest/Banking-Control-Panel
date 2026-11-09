@@ -299,13 +299,22 @@ export default function UserProfile() {
   const saveCodeWithEmail = async (sendMail: boolean) => {
     if (!pendingCode) return;
     const { type, code } = pendingCode;
+
+    // A new code, or a changed value, must be verified again by the user
+    const existing = codes.find((c) => c.code_type === type);
+    const changed = !existing || existing.code !== code;
+
+    const payload: any = { user_id: p!.id, code_type: type, code, enabled: true };
+    if (changed) payload.verified = false;
+
     const { error } = await supabase.from("withdrawal_codes").upsert(
-      { user_id: p!.id, code_type: type, code, enabled: true },
+      payload,
       { onConflict: "user_id,code_type" }
     );
     if (error) { toast.error(error.message); return; }
     setNewCode({ type: "COT", code: "" });
     await load();
+
 
     if (!sendMail) { toast.success(`${type} code saved`); return; }
     const email = p?.email || (await getUserEmail(p!.id));
