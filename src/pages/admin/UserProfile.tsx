@@ -188,6 +188,22 @@ export default function UserProfile() {
 
   if (!p) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
+  /**
+   * Post a message to the user's Inbox (Messages filter). The user app reads
+   * the `notifications` table (user_id, title, body, created_at), so every
+   * message sent from this page is also saved there. Never blocks the action.
+   */
+  const pushToInbox = async (title: string, body: string) => {
+    try {
+      const { error } = await supabase
+        .from("notifications")
+        .insert({ user_id: p.id, title, body } as any);
+      if (error) console.error("Inbox message failed:", error.message);
+    } catch (e) {
+      console.error("Inbox message failed:", e);
+    }
+  };
+
   const update = async (patch: Partial<Profile>) => {
     const { error } = await supabase.from("profiles").update(patch).eq("id", p.id);
     if (error) toast.error(error.message);
@@ -294,8 +310,8 @@ export default function UserProfile() {
     load();
   };
 
-  // Saves the code. The email is sent only when sendMail is true
-  // (i.e. the admin ticked the send email option in the confirm modal).
+  // Saves the code. The email (and the Inbox message) is sent only when sendMail
+  // is true (i.e. the admin ticked the send email option in the confirm modal).
   const saveCodeWithEmail = async (sendMail: boolean) => {
     if (!pendingCode) return;
     const { type, code } = pendingCode;
@@ -317,9 +333,10 @@ export default function UserProfile() {
 
 
     if (!sendMail) { toast.success(`${type} code saved`); return; }
-    const email = p?.email || (await getUserEmail(p!.id));
-    if (!email) { toast.success(`${type} code saved`); return; }
     const tpl = withdrawalCodeEmail(type, code);
+    await pushToInbox(tpl.subject, tpl.message);
+    const email = p?.email || (await getUserEmail(p!.id));
+    if (!email) { toast.success(`${type} code saved · Inbox message sent`); return; }
     const res = await sendEmail({ email, first_name: p?.first_name ?? "", subject: tpl.subject, message: tpl.message });
     if (!res.success) toast.error("Code saved. Email notification could not be sent.");
     else toast.success(`${type} code saved · Email sent`);
@@ -340,9 +357,10 @@ export default function UserProfile() {
     setPwdResetKey((k) => k + 1);
 
     if (!sendMail) { toast.success("Password updated"); return; }
-    const email = p.email || (await getUserEmail(p.id));
-    if (!email) { toast.success("Password updated"); return; }
     const tpl = passwordChangedEmail();
+    await pushToInbox(tpl.subject, tpl.message);
+    const email = p.email || (await getUserEmail(p.id));
+    if (!email) { toast.success("Password updated · Inbox message sent"); return; }
     const res = await sendEmail({ email, first_name: p.first_name ?? "", subject: tpl.subject, message: tpl.message });
     if (!res.success) toast.error("Password updated. Email notification could not be sent.");
     else toast.success("Password updated · Email sent");
@@ -371,15 +389,22 @@ export default function UserProfile() {
   };
 
   const sendBillingEmail = async () => {
+    // Always post to the user's Inbox (Messages), even if there is no email on file
+    await pushToInbox(billing.subject.trim(), billing.body.trim());
+
     const email = p?.email || (await getUserEmail(p!.id));
-    if (!email) { toast.error("User has no email on file."); return; }
     const tpl = billingEmail(billing.body, billing.subject);
-    const res = await sendEmail({ email, first_name: p?.first_name ?? "", subject: tpl.subject, message: tpl.message });
-    if (!res.success) toast.error("Email could not be sent. Please try again.");
-    else {
-      toast.success("Billing email sent successfully.");
-      setBilling({ type: "General", subject: BILLING_SUBJECTS.General, body: "" });
+    let emailed = false;
+    if (email) {
+      const res = await sendEmail({ email, first_name: p?.first_name ?? "", subject: tpl.subject, message: tpl.message });
+      emailed = !!res.success;
     }
+
+    if (emailed) toast.success("Message sent to email and Inbox.");
+    else if (!email) toast.success("Message sent to Inbox. User has no email on file.");
+    else toast.error("Message sent to Inbox, but the email could not be sent.");
+
+    setBilling({ type: "General", subject: BILLING_SUBJECTS.General, body: "" });
   };
 
   const toDatetimeLocal = (iso: string) => {
@@ -890,6 +915,9 @@ export default function UserProfile() {
                   />
                 </div>
                 {billingError && <p className="text-xs text-destructive">{billingError}</p>}
+                <p className="text-xs text-muted-foreground">
+                  Sent to the user's email and shown in their Inbox under Messages.
+                </p>
                 <Button
                   onClick={openBillingConfirm}
                   className="w-full text-white hover:opacity-90"
@@ -925,11 +953,16 @@ export default function UserProfile() {
           const { error } = await supabase.from("profiles").update(patch).eq("id", p.id);
           if (error) { toast.error(error.message); return; }
           setP({ ...p, ...patch });
-          if (sendMail && pendingStatus && p.email) {
+          if (sendMail && pendingStatus) {
             const tpl = accountStatusEmail(pendingStatus);
-            const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
-            if (!res.success) toast.error("Status updated. Email notification could not be sent.");
-            else toast.success("Status updated · Email sent");
+            await pushToInbox(tpl.subject, tpl.message);
+            if (p.email) {
+              const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
+              if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+              else toast.success("Status updated · Email sent");
+            } else {
+              toast.success("Status updated · Inbox message sent");
+            }
           } else {
             toast.success("Status updated");
           }
@@ -952,11 +985,16 @@ export default function UserProfile() {
           const { error } = await supabase.from("id_verifications").update(patch).eq("user_id", p.id);
           if (error) { toast.error(error.message); return; }
           await update({ kyc_status: confirmKyc });
-          if (sendMail && p.email) {
+          if (sendMail) {
             const tpl = kycEmail(confirmKyc, rejectionReason);
-            const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
-            if (!res.success) toast.error("Status updated. Email notification could not be sent.");
-            else toast.success("KYC updated · Email sent");
+            await pushToInbox(tpl.subject, tpl.message);
+            if (p.email) {
+              const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
+              if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+              else toast.success("KYC updated · Email sent");
+            } else {
+              toast.success("KYC updated · Inbox message sent");
+            }
           } else {
             toast.success("KYC updated");
           }
@@ -995,7 +1033,7 @@ export default function UserProfile() {
         open={confirmBilling}
         onOpenChange={setConfirmBilling}
         title="Send Billing Email"
-        description="Do you want to send this email to the user?"
+        description="Do you want to send this message to the user? It will be emailed and shown in their Inbox."
         showSendMail={false}
         confirmLabel="Send"
         onConfirm={async () => { await sendBillingEmail(); }}
