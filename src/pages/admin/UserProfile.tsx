@@ -133,6 +133,9 @@ export default function UserProfile() {
   const [pendingPassword, setPendingPassword] = useState<string | null>(null);
   const [pwdResetKey, setPwdResetKey] = useState(0);
 
+  // PIN change: modal first, then save
+  const [pendingPin, setPendingPin] = useState<string | null>(null);
+
   // Collapsible sections — both collapsed by default
   const [secondaryOpen, setSecondaryOpen] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
@@ -366,6 +369,19 @@ export default function UserProfile() {
     else toast.success("Password updated · Email sent");
   };
 
+  // Saves the new PIN after the admin confirmed in the modal.
+  const savePin = async () => {
+    if (!pendingPin) return;
+    const next = pendingPin;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ pin: next } as any)
+      .eq("id", p.id);
+    if (error) { toast.error(error.message); return; }
+    setP({ ...p, pin: next } as any);
+    toast.success("PIN updated");
+  };
+
   const BILLING_SUBJECTS: Record<string, string> = {
     COT: "Cost of Transfer (COT) — Flexiq Verve",
     TAX: "Tax Clearance — Flexiq Verve",
@@ -518,7 +534,16 @@ export default function UserProfile() {
               <Label>Username</Label>
               <Input value={form.username} onChange={(e) => handleFormChange("username", e.target.value)} />
             </div>
-            <PinDisplay pin={(p as any).pin ?? ""} />
+            <PinEditor
+              current={(p as any).pin ?? ""}
+              onUpdate={(next) => {
+                if (!/^\d{4,6}$/.test(next)) {
+                  toast.error("PIN must be 4 to 6 digits");
+                  return;
+                }
+                setPendingPin(next);
+              }}
+            />
             <div className="space-y-1.5 min-w-0">
               <Label>Account created at</Label>
               <Input
@@ -1014,6 +1039,17 @@ export default function UserProfile() {
         onConfirm={async (sm) => { await savePasswordWithEmail(sm); setPendingPassword(null); }}
       />
 
+      {/* PIN change confirm */}
+      <ConfirmActionDialog
+        open={!!pendingPin}
+        onOpenChange={(o) => !o && setPendingPin(null)}
+        title="Change PIN"
+        description={`Change the PIN for ${p.email}?`}
+        showSendMail={false}
+        confirmLabel="Change PIN"
+        onConfirm={async () => { await savePin(); setPendingPin(null); }}
+      />
+
       {/* Code save confirm: Save / Cancel, email only sent if "send mail" is ticked */}
       <ConfirmActionDialog
         open={!!pendingCode}
@@ -1078,17 +1114,38 @@ function Field({ label, value, onSave }: { label: string; value: string; onSave:
   );
 }
 
-function PinDisplay({ pin }: { pin: string }) {
+// Editable PIN: type a new PIN, then "Update PIN" opens the confirm modal.
+// Digits only, 4 to 6 characters (checked again in the parent before saving).
+function PinEditor({ current, onUpdate }: { current: string; onUpdate: (next: string) => void }) {
   const [show, setShow] = useState(false);
+  const [v, setV] = useState(current);
+  useEffect(() => setV(current), [current]);
   return (
     <div className="space-y-1.5">
       <Label>Account PIN</Label>
       <div className="flex gap-2">
-        <Input type={show ? "text" : "password"} value={pin || ""} readOnly placeholder="No PIN set" />
+        <Input
+          type={show ? "text" : "password"}
+          inputMode="numeric"
+          autoComplete="off"
+          maxLength={6}
+          value={v}
+          placeholder="No PIN set"
+          onChange={(e) => setV(e.target.value.replace(/\D/g, ""))}
+        />
         <Button type="button" variant="outline" size="icon" onClick={() => setShow((s) => !s)}>
           {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </Button>
       </div>
+      <Button
+        type="button"
+        size="sm"
+        className="w-full"
+        disabled={!v || v === current}
+        onClick={() => onUpdate(v)}
+      >
+        Update PIN
+      </Button>
     </div>
   );
 }
