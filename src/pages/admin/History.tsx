@@ -163,6 +163,8 @@ export default function History() {
       rows.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
       return rows.map((r) => ({ ...r, profiles: r.user_id ? map[r.user_id] : null }));
     },
+    refetchInterval: 15000, // new login alerts appear on their own
+    refetchOnWindowFocus: true,
   });
 
   const rows = data ?? [];
