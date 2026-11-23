@@ -21,6 +21,7 @@ import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
 import { RowSkeletonList } from "@/components/admin/RowSkeleton";
 import { sendEmail } from "@/lib/sendEmail";
 import { accountStatusEmail } from "@/lib/emailTemplates";
+import { getBalanceBreakdown } from "@/hooks/useTotalBalance";
 
 const statusColor = (s: string) =>
   s === "active"
@@ -166,7 +167,7 @@ Flexiq Verve Support Team`,
                     </div>
                     <p className="truncate text-xs text-muted-foreground">{u.email}</p>
                     <p className="mt-2 text-lg font-bold">
-                      {fmtMoney(u.balance ?? u.total_balance, u.currency || "USD")}
+                      {fmtMoney(getBalanceBreakdown(u).total, u.currency || "USD")}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       #{u.account_number} · KYC: {u.kyc_status}
