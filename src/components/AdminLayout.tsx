@@ -30,7 +30,7 @@ const navItems = [
   { to: "/admin/transactions", label: "Transactions", icon: ArrowLeftRight },
   { to: "/admin/create-transaction", label: "Create Transaction", icon: PlusCircle },
   { to: "/admin/deposits", label: "Deposits", icon: Wallet },
-  { to: "/admin/loans", label: "Loans", icon: Landmark },
+  { to: "/admin/loans", label: "Loans & Lock", icon: Landmark },
   { to: "/admin/history", label: "History", icon: FileText },
   { to: "/admin/wire-transfers", label: "Wire Transfers", icon: Send },
   { to: "/admin/local-transfers", label: "Local Transfers", icon: Send },
