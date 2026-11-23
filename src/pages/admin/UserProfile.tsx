@@ -112,38 +112,29 @@ function Row({ label, value }: { label: string; value?: string | null }) {
 }
 
 /**
- * Merge all id_verifications rows for a user (the KYC upload form and the
- * ID.me details can each create a row). Oldest first, so the newest value
- * wins, and blank values never overwrite a real one.
+ * The ID.me flow saves legal name / date of birth with no uploaded documents.
+ * The normal KYC flow saves uploaded documents (front / back / selfie).
+ * Each is reviewed separately on this page.
  */
-const mergeVerifications = (rows: any[] | null) => {
-  if (!rows || rows.length === 0) return null;
-  const sorted = [...rows].sort(
-    (a, b) =>
-      new Date(a.submitted_at ?? a.reviewed_at ?? 0).getTime() -
-      new Date(b.submitted_at ?? b.reviewed_at ?? 0).getTime()
-  );
-  return sorted.reduce((acc: any, row) => {
-    for (const [k, v] of Object.entries(row)) {
-      if (v !== null && v !== undefined && v !== "") acc[k] = v;
-    }
-    return acc;
-  }, {});
-};
+const isIdmeRow = (r: any) =>
+  !r?.document_front_url &&
+  !r?.selfie_url &&
+  !!(r?.legal_first_name || r?.legal_last_name || r?.date_of_birth);
 
 export default function UserProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [p, setP] = useState<Profile | null>(null);
   const [codes, setCodes] = useState<WithdrawalCode[]>([]);
-  const [verification, setVerification] = useState<any>(null);
+  const [verifications, setVerifications] = useState<any[]>([]);
   const [showPwd, setShowPwd] = useState(false);
   const [delta, setDelta] = useState("");
   const [newCode, setNewCode] = useState({ type: "COT" as (typeof CODE_TYPES)[number], code: "" });
   const [pendingStatus, setPendingStatus] = useState<"active" | "frozen" | "blocked" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmKyc, setConfirmKyc] = useState<"approved" | "rejected" | null>(null);
-  const [rejectionReason, setRejectionReason] = useState("");
+  // Which verification row is being approved / rejected (KYC and ID.me are reviewed separately)
+  const [confirmVerif, setConfirmVerif] = useState<{ row: any; action: "approved" | "rejected" } | null>(null);
+  const [rejectionReasons, setRejectionReasons] = useState<Record<string, string>>({});
   const [pendingCode, setPendingCode] = useState<null | { type: (typeof CODE_TYPES)[number]; code: string }>(null);
   const [billing, setBilling] = useState({ type: "General", subject: "", body: "" });
   const [billingError, setBillingError] = useState("");
@@ -185,13 +176,13 @@ export default function UserProfile() {
     const [{ data: prof }, { data: cs }, { data: verif }] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", id).maybeSingle(),
       supabase.from("withdrawal_codes").select("*").eq("user_id", id),
-      // Read every row (KYC upload + ID.me), then merge them below
+      // Read every row (KYC upload + ID.me); each is shown and reviewed on its own
       supabase.from("id_verifications").select("*").eq("user_id", id),
     ]);
     const profile = prof as Profile | null;
     setP(profile);
     setCodes((cs as WithdrawalCode[]) ?? []);
-    setVerification(mergeVerifications(verif as any[] | null));
+    setVerifications((verif as any[]) ?? []);
     if (profile) {
       setForm({
         first_name: profile.first_name ?? "",
@@ -468,6 +459,90 @@ export default function UserProfile() {
   const visibleSecondary = getSecondaryAccountTypes(signupType).map(
     (key) => SECONDARY_ACCOUNT_TYPES.find((a) => a.key === key)!
   );
+
+  /** One review card per verification. Approved entries collapse to a short notice with no buttons. */
+  const renderVerification = (row: any, label: string) => {
+    const idme = isIdmeRow(row);
+    if (row.status === "approved") {
+      return (
+        <Card key={row.id} className="flex items-center gap-3 p-4">
+          <ShieldCheck className="h-5 w-5 shrink-0 text-green-600" />
+          <div>
+            <p className="text-sm font-semibold">{label} approved</p>
+            <p className="text-xs text-muted-foreground">
+              {row.reviewed_at ? new Date(row.reviewed_at).toLocaleString() : "No further action needed"}
+            </p>
+          </div>
+        </Card>
+      );
+    }
+    const legalName = [row.legal_first_name, row.legal_middle_name, row.legal_last_name]
+      .filter(Boolean)
+      .join(" ");
+    return (
+      <Card key={row.id} className="space-y-3 p-4">
+        <Label>{label}</Label>
+        <div className="space-y-1">
+          <Row label="Status" value={row.status} />
+          {legalName && <Row label="Legal name" value={legalName} />}
+          {row.date_of_birth && <Row label="Date of birth" value={row.date_of_birth} />}
+          <Row label="Document type" value={row.document_type} />
+          <Row label="Document number" value={row.document_number} />
+          {row.document_country && <Row label="Document country" value={row.document_country} />}
+          <Row
+            label="Submitted"
+            value={row.submitted_at ? new Date(row.submitted_at).toLocaleString() : null}
+          />
+          {row.reviewed_at && (
+            <Row label="Reviewed" value={new Date(row.reviewed_at).toLocaleString()} />
+          )}
+          {row.rejection_reason && <Row label="Rejection reason" value={row.rejection_reason} />}
+        </div>
+        {row.document_front_url && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Document front</Label>
+            <img src={row.document_front_url} className="rounded-md border max-h-48 object-contain w-full" />
+          </div>
+        )}
+        {row.document_back_url && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Document back</Label>
+            <img src={row.document_back_url} className="rounded-md border max-h-48 object-contain w-full" />
+          </div>
+        )}
+        {row.selfie_url && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Selfie holding ID</Label>
+            <img src={row.selfie_url} className="rounded-md border max-h-48 object-contain w-full" />
+          </div>
+        )}
+        <div className="space-y-2 border-t border-border pt-2">
+          <Label>Rejection reason (optional)</Label>
+          <Input
+            placeholder="e.g. Document unclear or expired"
+            value={rejectionReasons[row.id] ?? ""}
+            onChange={(e) => setRejectionReasons((prev) => ({ ...prev, [row.id]: e.target.value }))}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              size="sm"
+              className="bg-green-600 text-white hover:bg-green-700"
+              onClick={() => setConfirmVerif({ row, action: "approved" })}
+            >
+              <ShieldCheck className="mr-1 h-4 w-4" /> {idme ? "Approve ID.me" : "Approve KYC"}
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setConfirmVerif({ row, action: "rejected" })}
+            >
+              <ShieldX className="mr-1 h-4 w-4" /> {idme ? "Reject ID.me" : "Reject KYC"}
+            </Button>
+          </div>
+        </div>
+      </Card>
+    );
+  };
 
   // If a user already has a currency that isn't in the list, keep it selectable.
   const currencyOptions = CURRENCIES.some((c) => c.code === form.currency) || !form.currency
@@ -773,82 +848,19 @@ export default function UserProfile() {
 
         {/* ── KYC TAB ── */}
         <TabsContent value="kyc" className="space-y-3">
-          {verification ? (
-            <Card className="space-y-3 p-4">
-              <Label>Submitted Identity Document</Label>
-              <div className="space-y-1">
-                <Row label="Status" value={verification.status} />
-                <Row
-                  label="Legal name"
-                  value={[
-                    verification.legal_first_name,
-                    verification.legal_middle_name,
-                    verification.legal_last_name,
-                  ].filter(Boolean).join(" ")}
-                />
-                <Row label="Date of birth" value={verification.date_of_birth} />
-                <Row label="Document type" value={verification.document_type} />
-                <Row label="Document number" value={verification.document_number} />
-                <Row label="Document country" value={verification.document_country} />
-                <Row
-                  label="Submitted"
-                  value={verification.submitted_at ? new Date(verification.submitted_at).toLocaleString() : null}
-                />
-                <Row
-                  label="Reviewed"
-                  value={verification.reviewed_at ? new Date(verification.reviewed_at).toLocaleString() : null}
-                />
-                {verification.rejection_reason && (
-                  <Row label="Rejection reason" value={verification.rejection_reason} />
-                )}
-              </div>
-              {verification.document_front_url && (
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Document front</Label>
-                  <img src={verification.document_front_url} className="rounded-md border max-h-48 object-contain w-full" />
-                </div>
-              )}
-              {verification.document_back_url && (
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Document back</Label>
-                  <img src={verification.document_back_url} className="rounded-md border max-h-48 object-contain w-full" />
-                </div>
-              )}
-              {verification.selfie_url && (
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Selfie holding ID</Label>
-                  <img src={verification.selfie_url} className="rounded-md border max-h-48 object-contain w-full" />
-                </div>
-              )}
-              <div className="space-y-2 pt-2 border-t border-border">
-                <Label>Rejection reason (optional)</Label>
-                <Input
-                  placeholder="e.g. Document unclear or expired"
-                  value={rejectionReason}
-                  onChange={(e) => setRejectionReason(e.target.value)}
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    size="sm"
-                    className="bg-green-600 text-white hover:bg-green-700"
-                    onClick={() => setConfirmKyc("approved")}
-                  >
-                    <ShieldCheck className="mr-1 h-4 w-4" /> Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => setConfirmKyc("rejected")}
-                  >
-                    <ShieldX className="mr-1 h-4 w-4" /> Reject
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ) : (
+          {verifications.length === 0 ? (
             <Card className="p-4">
               <p className="text-sm text-muted-foreground">No identity verification submitted yet.</p>
             </Card>
+          ) : (
+            <>
+              {verifications
+                .filter((r) => !isIdmeRow(r))
+                .map((r) => renderVerification(r, "KYC documents"))}
+              {verifications
+                .filter((r) => isIdmeRow(r))
+                .map((r) => renderVerification(r, "ID.me verification"))}
+            </>
           )}
         </TabsContent>
 
@@ -1022,37 +1034,52 @@ export default function UserProfile() {
         }}
       />
 
-      {/* KYC confirm dialog with Send Mail */}
+      {/* KYC / ID.me confirm dialog with Send Mail */}
       <ConfirmActionDialog
-        open={!!confirmKyc}
-        onOpenChange={(o) => !o && setConfirmKyc(null)}
-        title={confirmKyc === "approved" ? "Approve KYC" : "Reject KYC"}
-        description={`Do you want to ${confirmKyc === "approved" ? "approve" : "reject"} this KYC submission?`}
+        open={!!confirmVerif}
+        onOpenChange={(o) => !o && setConfirmVerif(null)}
+        title={
+          confirmVerif
+            ? `${confirmVerif.action === "approved" ? "Approve" : "Reject"} ${
+                isIdmeRow(confirmVerif.row) ? "ID.me verification" : "KYC"
+              }`
+            : "Confirm"
+        }
+        description={
+          confirmVerif
+            ? `Do you want to ${confirmVerif.action === "approved" ? "approve" : "reject"} this ${
+                isIdmeRow(confirmVerif.row) ? "ID.me verification" : "KYC submission"
+              }?`
+            : ""
+        }
         onConfirm={async (sendMail) => {
-          if (!confirmKyc) return;
+          if (!confirmVerif) return;
+          const { row, action } = confirmVerif;
+          const reason = rejectionReasons[row.id] ?? "";
           const patch =
-            confirmKyc === "approved"
+            action === "approved"
               ? { status: "approved", reviewed_at: new Date().toISOString(), rejection_reason: null }
-              : { status: "rejected", reviewed_at: new Date().toISOString(), rejection_reason: rejectionReason || null };
-          // Updates every id_verifications row for this user (KYC upload + ID.me)
-          const { error } = await supabase.from("id_verifications").update(patch).eq("user_id", p.id);
+              : { status: "rejected", reviewed_at: new Date().toISOString(), rejection_reason: reason || null };
+          // Only this verification is updated, so ID.me and KYC are approved independently
+          const { error } = await supabase.from("id_verifications").update(patch).eq("id", row.id);
           if (error) { toast.error(error.message); return; }
-          await update({ kyc_status: confirmKyc });
+          // The profile's KYC status follows the normal KYC documents only
+          if (!isIdmeRow(row)) await update({ kyc_status: action });
           if (sendMail) {
-            const tpl = kycEmail(confirmKyc, rejectionReason);
+            const tpl = kycEmail(action, reason);
             await pushToInbox(tpl.subject, tpl.message);
             if (p.email) {
               const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
               if (!res.success) toast.error("Status updated. Email notification could not be sent.");
-              else toast.success("KYC updated · Email sent");
+              else toast.success("Verification updated · Email sent");
             } else {
-              toast.success("KYC updated · Inbox message sent");
+              toast.success("Verification updated · Inbox message sent");
             }
           } else {
-            toast.success("KYC updated");
+            toast.success("Verification updated");
           }
-          setRejectionReason("");
-          setConfirmKyc(null);
+          setRejectionReasons((prev) => ({ ...prev, [row.id]: "" }));
+          setConfirmVerif(null);
           load();
         }}
       />
