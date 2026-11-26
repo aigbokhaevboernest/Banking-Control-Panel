@@ -68,7 +68,7 @@ export function fxTransferEmail(
     case "approved":
       return {
         subject: "FX Transfer Approved",
-        message: `Your FX transfer of ${amt} to ${rec} has been approved and is currently being processed. Funds should reflect within 1–3 business days.${FOOTER}`,
+        message: `Your FX transfer of ${amt} to ${rec} has been approved and is currently being processed. Funds should reflect within 2 hours.${FOOTER}`,
       };
     case "failed":
       return {
@@ -78,7 +78,7 @@ export function fxTransferEmail(
     case "processing":
       return {
         subject: "FX Transfer Processing",
-        message: `Your FX transfer of ${amt} to ${rec} is currently being processed. Please allow 1–3 business days for completion.${FOOTER}`,
+        message: `Your FX transfer of ${amt} to ${rec} is currently being processed. Funds should reflect within 2 hours.${FOOTER}`,
       };
     default:
       return {
@@ -191,23 +191,36 @@ export function transactionEmail(
     recipient_name?: string | null;
   },
 ): EmailTemplate {
-  const type = String(tx.type || "").toLowerCase();
-  const d = `${tx.description || ""} ${tx.type || ""}`.toLowerCase();
+  const type = String(tx.type || "").toLowerCase().trim();
+  const desc = String(tx.description || "").toLowerCase();
+  const combined = `${desc} ${type}`;
   const rec = tx.recipient_name || tx.recipient || null;
 
-  // Prefer explicit type checks first
-  if (type === "fx" || d.includes("fx")) {
+  // FX first — catch type=fx / fx_transfer and any description that mentions FX / foreign exchange
+  const isFx =
+    type === "fx" ||
+    type === "fx_transfer" ||
+    type.includes("fx") ||
+    desc.includes("fx") ||
+    desc.includes("foreign exchange") ||
+    combined.includes("fx transfer");
+
+  if (isFx) {
     return fxTransferEmail(status, tx.currency, tx.amount, rec);
   }
-  if (type === "wire_transfer" || d.includes("wire") || d.includes("international")) {
+
+  if (type === "wire_transfer" || type === "wire" || desc.includes("wire") || desc.includes("international")) {
     return wireTransferEmail(status, tx.currency, tx.amount, rec);
   }
-  if (type === "transfer_out" || d.includes("local")) {
+
+  if (type === "transfer_out" || desc.includes("local")) {
     return localTransferEmail(status, tx.currency, tx.amount, rec);
   }
-  if (type === "loan" || d.includes("loan")) {
+
+  if (type === "loan" || type === "loan_disbursement" || desc.includes("loan")) {
     return loanDisbursementEmail(status, tx.currency, tx.amount);
   }
+
   return generalTransactionEmail(status, tx.currency, tx.amount);
 }
 
