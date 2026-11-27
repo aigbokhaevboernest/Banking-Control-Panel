@@ -39,6 +39,28 @@ const applicationStatusColor = (s: string) =>
 
 type UserRow = Profile & { isSuperAdmin?: boolean };
 
+// Admin check that works with either table name: `user_roles` or `user_role`.
+// A table that doesn't exist (or can't be read) is skipped instead of breaking the page.
+const ROLE_TABLES = ["user_roles", "user_role"] as const;
+
+async function fetchAdminIds(): Promise<Set<string>> {
+  const found = new Set<string>();
+  await Promise.all(
+    ROLE_TABLES.map(async (table) => {
+      try {
+        const { data, error } = await (supabase as any).from(table).select("user_id, role");
+        if (error) return;
+        ((data as any[]) ?? []).forEach((r) => {
+          if (String(r.role).toLowerCase() === "admin") found.add(r.user_id);
+        });
+      } catch {
+        /* table missing: ignore */
+      }
+    })
+  );
+  return found;
+}
+
 export default function Users() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [q, setQ] = useState("");
@@ -48,13 +70,12 @@ export default function Users() {
 
   const load = async () => {
     setLoading(true);
-    const [{ data, error }, { data: roles }] = await Promise.all([
+    const [{ data, error }, adminIds] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
-      supabase.from("user_roles").select("user_id").eq("role", "admin"),
+      fetchAdminIds(),
     ]);
     if (error) toast.error(error.message);
 
-    const adminIds = new Set((roles || []).map((r: any) => r.user_id));
     const rows = ((data as Profile[]) ?? []).map((u) => ({
       ...u,
       isSuperAdmin: adminIds.has(u.id),
