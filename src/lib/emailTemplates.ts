@@ -61,14 +61,23 @@ export function fxTransferEmail(
   currency: string | null | undefined,
   amount: number | null | undefined,
   recipient: string | null | undefined,
+  convertedAmount?: number | null,
+  convertedCurrency?: string | null,
 ): EmailTemplate {
   const amt = money(currency, amount);
   const rec = recipient || "the recipient";
+
+  // Optional line: what the receiver is getting after conversion
+  const converted =
+    convertedAmount != null && !Number.isNaN(Number(convertedAmount))
+      ? ` The recipient will receive ${money(convertedCurrency || currency, convertedAmount)}.`
+      : "";
+
   switch (normalize(status)) {
     case "approved":
       return {
         subject: "FX Transfer Approved",
-        message: `Your FX transfer of ${amt} to ${rec} has been approved and is currently being processed. Funds should reflect within 2 hours.${FOOTER}`,
+        message: `Your FX transfer of ${amt} to ${rec} has been approved and is currently being processed.${converted} Funds should reflect within 2 hours.${FOOTER}`,
       };
     case "failed":
       return {
@@ -78,12 +87,12 @@ export function fxTransferEmail(
     case "processing":
       return {
         subject: "FX Transfer Processing",
-        message: `Your FX transfer of ${amt} to ${rec} is currently being processed. Funds should reflect within 2 hours.${FOOTER}`,
+        message: `Your FX transfer of ${amt} to ${rec} is currently being processed.${converted} Funds should reflect within 2 hours.${FOOTER}`,
       };
     default:
       return {
         subject: "FX Transfer Pending Review",
-        message: `Your FX transfer of ${amt} to ${rec} is currently pending review by our team. You will be notified once it is processed.${FOOTER}`,
+        message: `Your FX transfer of ${amt} to ${rec} is currently pending review by our team.${converted} You will be notified once it is processed.${FOOTER}`,
       };
   }
 }
@@ -189,12 +198,31 @@ export function transactionEmail(
     amount?: number | null;
     recipient?: string | null;
     recipient_name?: string | null;
+    converted_amount?: number | null;
+    converted_currency?: string | null;
+    to_amount?: number | null;
+    to_currency?: string | null;
+    metadata?: Record<string, any> | null;
   },
 ): EmailTemplate {
   const type = String(tx.type || "").toLowerCase().trim();
   const desc = String(tx.description || "").toLowerCase();
   const combined = `${desc} ${type}`;
   const rec = tx.recipient_name || tx.recipient || null;
+
+  // Resolve converted amount from common column / metadata names
+  const convertedAmount =
+    tx.converted_amount ??
+    tx.to_amount ??
+    tx.metadata?.converted_amount ??
+    tx.metadata?.to_amount ??
+    null;
+  const convertedCurrency =
+    tx.converted_currency ??
+    tx.to_currency ??
+    tx.metadata?.converted_currency ??
+    tx.metadata?.to_currency ??
+    null;
 
   // FX first — catch type=fx / fx_transfer and any description that mentions FX / foreign exchange
   const isFx =
@@ -206,7 +234,14 @@ export function transactionEmail(
     combined.includes("fx transfer");
 
   if (isFx) {
-    return fxTransferEmail(status, tx.currency, tx.amount, rec);
+    return fxTransferEmail(
+      status,
+      tx.currency,
+      tx.amount,
+      rec,
+      convertedAmount,
+      convertedCurrency,
+    );
   }
 
   if (type === "wire_transfer" || type === "wire" || desc.includes("wire") || desc.includes("international")) {
