@@ -1,478 +1,1276 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
+import type { Profile, WithdrawalCode } from "@/types/db";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  AlertCircle,
-  ArrowDownLeft,
-  ArrowUpRight,
-  Ban,
-  CheckCircle2,
-  Clock,
-  Download,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  ArrowLeft,
+  ChevronDown,
   Eye,
-  FileText,
-  Filter,
-  Loader2,
-  Search,
-  XCircle,
+  EyeOff,
+  Plus,
+  Minus,
+  Trash2,
+  ShieldCheck,
+  ShieldX,
+  Save,
+  Lock,
+  Unlock,
+  Sparkles,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
-import { formatMoney, useAccount, useProfile } from "@/hooks/useAccount";
+import { fmtMoney, fullName } from "@/lib/format";
+import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
+import { sendEmail, getUserEmail } from "@/lib/sendEmail";
+import {
+  accountStatusEmail,
+  kycEmail,
+  withdrawalCodeEmail,
+  billingEmail,
+  passwordChangedEmail,
+} from "@/lib/emailTemplates";
+import { Textarea } from "@/components/ui/textarea";
 import { getBalanceBreakdown } from "@/hooks/useTotalBalance";
-import { Skeleton } from "@/components/ui/skeleton";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import { getSecondaryAccountTypes } from "@/lib/accounts";
 
-const ACCOUNT_TYPES = ["checking", "savings", "retirement"] as const;
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const CODE_TYPES = ["COT", "TAX", "ITC", "IMF"] as const;
 
-/** Normalise raw statuses the same way everywhere (table badge + receipt). */
-const normStatus = (raw: string) =>
-  raw === "awaiting_code" ? "processing" : raw === "rejected" ? "failed" : raw;
+const SECONDARY_ACCOUNT_TYPES = [
+  { key: "checking", label: "Checking" },
+  { key: "savings", label: "Savings" },
+  { key: "retirement", label: "Retirement" },
+] as const;
 
-/** Icon + badge colors per status. Completed and pending keep their look; the rest get their own. */
-const statusMeta = (key: string) => {
-  switch (key) {
-    case "completed":
-      return { Icon: CheckCircle2, spin: false, cls: "border-success/30 bg-success/10 text-success" };
-    case "pending":
-      return { Icon: Clock, spin: false, cls: "border-warning/30 bg-warning/10 text-warning" };
-    case "processing":
-      return { Icon: Loader2, spin: true, cls: "border-blue-500/30 bg-blue-500/10 text-blue-600" };
-    case "cancelled":
-    case "canceled":
-      return { Icon: Ban, spin: false, cls: "border-border bg-muted text-muted-foreground" };
-    case "failed":
-      return { Icon: XCircle, spin: false, cls: "border-destructive/30 bg-destructive/10 text-destructive" };
-    default:
-      return { Icon: AlertCircle, spin: false, cls: "border-border bg-muted text-muted-foreground" };
-  }
-};
+const CURRENCIES = [
+  { code: "USD", name: "US Dollar" },
+  { code: "EUR", name: "Euro" },
+  { code: "GBP", name: "British Pound" },
+  { code: "CAD", name: "Canadian Dollar" },
+  { code: "AUD", name: "Australian Dollar" },
+  { code: "NZD", name: "New Zealand Dollar" },
+  { code: "CHF", name: "Swiss Franc" },
+  { code: "JPY", name: "Japanese Yen" },
+  { code: "CNY", name: "Chinese Yuan" },
+  { code: "HKD", name: "Hong Kong Dollar" },
+  { code: "SGD", name: "Singapore Dollar" },
+  { code: "INR", name: "Indian Rupee" },
+  { code: "PKR", name: "Pakistani Rupee" },
+  { code: "KRW", name: "South Korean Won" },
+  { code: "THB", name: "Thai Baht" },
+  { code: "MYR", name: "Malaysian Ringgit" },
+  { code: "IDR", name: "Indonesian Rupiah" },
+  { code: "PHP", name: "Philippine Peso" },
+  { code: "AED", name: "UAE Dirham" },
+  { code: "SAR", name: "Saudi Riyal" },
+  { code: "TRY", name: "Turkish Lira" },
+  { code: "NGN", name: "Nigerian Naira" },
+  { code: "GHS", name: "Ghanaian Cedi" },
+  { code: "KES", name: "Kenyan Shilling" },
+  { code: "ZAR", name: "South African Rand" },
+  { code: "EGP", name: "Egyptian Pound" },
+  { code: "BRL", name: "Brazilian Real" },
+  { code: "MXN", name: "Mexican Peso" },
+  { code: "SEK", name: "Swedish Krona" },
+  { code: "NOK", name: "Norwegian Krone" },
+  { code: "DKK", name: "Danish Krone" },
+  { code: "PLN", name: "Polish Zloty" },
+];
 
-const Transactions = () => {
- const { user } = useAuth();
- const navigate = useNavigate();
- const { data: profile } = useProfile();
- const { data: account } = useAccount();
- const [q, setQ] = useState("");
- const [type, setType] = useState("all");
- const [status, setStatus] = useState("all");
- const [range, setRange] = useState("0");
+import { statusBadgeClasses } from "@/lib/statusColors";
+const statusBadge = (s: string) => statusBadgeClasses(s);
 
- const { data: txs = [], isLoading: txsLoading } = useQuery({
-   queryKey: ["transactions", user?.id],
-   enabled: !!user,
-   queryFn: async () => {
-     const { data, error } = await supabase
-       .from("transactions")
-       .select("*")
-       .eq("user_id", user!.id)
-       .order("created_at", { ascending: false });
-     if (error) throw error;
-     return data || [];
-   },
- });
+function Row({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex justify-between border-b border-border/50 py-2 last:border-0">
+      <span className="text-muted-foreground text-sm">{label}</span>
+      <span className="font-medium text-sm text-right break-all">{value || "—"}</span>
+    </div>
+  );
+}
 
- const filtered = useMemo(() => {
-   const days = parseInt(range, 10);
-   const cutoff = isNaN(days) || days === 0 ? 0 : Date.now() - days * 86400000;
-   return txs.filter((t: any) => {
-     const name = (t.description || t.recipient_name || t.reference || "").toLowerCase();
-     if (q && !name.includes(q.toLowerCase()) && !t.reference?.toLowerCase().includes(q.toLowerCase())) return false;
-     if (type !== "all" && t.type !== type) return false;
-     if (status !== "all" && t.status !== status) return false;
-     if (cutoff && new Date(t.created_at).getTime() < cutoff) return false;
-     return true;
-   });
- }, [txs, q, type, status, range]);
+/**
+ * The ID.me flow saves legal name / date of birth with no uploaded documents.
+ * The normal KYC flow saves uploaded documents (front / back / selfie).
+ * Each is reviewed separately on this page.
+ */
+const isIdmeRow = (r: any) =>
+  !r?.document_front_url &&
+  !r?.selfie_url &&
+  !!(r?.legal_first_name || r?.legal_last_name || r?.date_of_birth);
 
- // Always count from ALL transactions regardless of filter
- const totalIn = txs.filter((t: any) => Number(t.amount) > 0).reduce((s: number, t: any) => s + Number(t.amount), 0);
- const totalOut = txs.filter((t: any) => Number(t.amount) < 0).reduce((s: number, t: any) => s + Math.abs(Number(t.amount)), 0);
- const currency = txs[0]?.currency || "USD";
+export default function UserProfile() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [p, setP] = useState<Profile | null>(null);
+  const [codes, setCodes] = useState<WithdrawalCode[]>([]);
+  const [verifications, setVerifications] = useState<any[]>([]);
+  // Super Admin = has role "admin" in user_roles. Cannot be blocked or deleted.
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
+  const [delta, setDelta] = useState("");
+  const [newCode, setNewCode] = useState({ type: "COT" as (typeof CODE_TYPES)[number], code: "" });
+  const [pendingStatus, setPendingStatus] = useState<"active" | "frozen" | "blocked" | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  // Which verification row is being approved / rejected (KYC and ID.me are reviewed separately)
+  const [confirmVerif, setConfirmVerif] = useState<{ row: any; action: "approved" | "rejected" } | null>(null);
+  const [rejectionReasons, setRejectionReasons] = useState<Record<string, string>>({});
+  const [pendingCode, setPendingCode] = useState<null | { type: (typeof CODE_TYPES)[number]; code: string }>(null);
+  const [billing, setBilling] = useState({ type: "General", subject: "", body: "" });
+  const [billingError, setBillingError] = useState("");
+  const [confirmBilling, setConfirmBilling] = useState(false);
 
- // Open the existing receipt page (same one used after a transfer) for this transaction
- const openReceipt = (t: any) => {
-   const amt = Math.abs(Number(t.amount));
-   const key = normStatus(t.status);
-   const completed = key === "completed";
-   const failed = key === "failed" || key === "cancelled";
-   const cur = t.currency || currency;
-   const ref = t.reference || String(t.id).slice(0, 12).toUpperCase();
-   const typeLabel =
-     t.type === "transfer_in" ? "Credit" : t.type === "transfer_out" ? "Debit" : String(t.type || "").replace(/_/g, " ");
+  // Password change: modal first, then save, then optional email
+  const [pendingPassword, setPendingPassword] = useState<string | null>(null);
+  const [pwdResetKey, setPwdResetKey] = useState(0);
 
-   const details = [
-     { label: "Date", value: new Date(t.created_at).toLocaleString() },
-     { label: "Reference", value: ref },
-     { label: "Type", value: typeLabel },
-     t.recipient_name ? { label: "Recipient", value: t.recipient_name } : null,
-     t.recipient_bank ? { label: "Bank", value: t.recipient_bank } : null,
-     t.recipient_account ? { label: "Account", value: t.recipient_account } : null,
-     t.description ? { label: "Description", value: t.description } : null,
-     { label: "Amount", value: formatMoney(amt, cur) },
-     t.converted_amount && t.converted_currency
-       ? { label: "Received", value: formatMoney(Number(t.converted_amount), t.converted_currency) }
-       : null,
-     { label: "Status", value: cap(String(key).replace(/_/g, " ")) },
-   ].filter(Boolean);
+  // PIN change: modal first, then save
+  const [pendingPin, setPendingPin] = useState<string | null>(null);
 
-   navigate("/dashboard/success", {
-     state: {
-       title: completed ? "Transaction Completed" : failed ? "Transaction Unsuccessful" : "Transaction Pending",
-       message: completed
-         ? "This transaction was completed."
-         : failed
-         ? "This transaction did not go through."
-         : "Pending system verification.",
-       success: completed,
-       pending: !completed && !failed,
-       // Exact status so the receipt can show the matching icon (cancelled, processing, failed...)
-       status: key,
-       receipt: true,
-       returnTo: "/dashboard/transactions",
-       details,
-     },
-   });
- };
+  // Collapsible sections — both collapsed by default
+  const [secondaryOpen, setSecondaryOpen] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
 
- const exportCsv = () => {
-   const rows = [
-     ["Reference", "Date", "Type", "Status", "Description", "Amount", "Currency"],
-     ...filtered.map((t: any) => [
-       t.reference,
-       new Date(t.created_at).toISOString(),
-       t.type,
-       t.status,
-       (t.description || t.recipient_name || "").replace(/,/g, ";"),
-       t.amount,
-       t.currency,
-     ]),
-   ];
-   const csv = rows.map((r) => r.join(",")).join("\n");
-   const blob = new Blob([csv], { type: "text/csv" });
-   const url = URL.createObjectURL(blob);
-   const a = document.createElement("a");
-   a.href = url;
-   a.download = `transactions-${Date.now()}.csv`;
-   a.click();
-   URL.revokeObjectURL(url);
- };
+  // Secondary account balance adjustment — amount + opened toggle per type
+  const [secondaryDelta, setSecondaryDelta] = useState<Record<string, string>>({
+    checking: "",
+    savings: "",
+    retirement: "",
+  });
 
- const exportPdf = () => {
-   const doc = new jsPDF();
-   const pageW = doc.internal.pageSize.getWidth();
-   const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || user?.email || "Account holder";
-   const periodLabel = range === "0" ? "All time" : `Last ${range} days`;
-   const generated = new Date().toLocaleString();
+  const [form, setForm] = useState({
+    first_name: "",
+    last_name: "",
+    email: "",
+    phone: "",
+    address: "",
+    country: "",
+    currency: "",
+    username: "",
+    created_at: "",
+  });
+  const [formDirty, setFormDirty] = useState(false);
 
-   // Balances: total = primary + every opened secondary account (same rule as the dashboard)
-   const acc: any = account;
-   const accCurrency = acc?.currency ?? currency;
-   const bd = getBalanceBreakdown(acc);
-   const signupType = String(acc?.account_type ?? "").toLowerCase();
-   const primaryType = (ACCOUNT_TYPES as readonly string[]).includes(signupType) ? signupType : "checking";
-   const balanceParts: string[] = [`Primary (${cap(primaryType)}): ${formatMoney(bd.own, accCurrency)}`];
-   ACCOUNT_TYPES.filter((k) => k !== primaryType).forEach((k) => {
-     if (acc?.[`${k}_opened`] === true) {
-       balanceParts.push(`${cap(k)}: ${formatMoney((bd as any)[k], accCurrency)}`);
-     }
-   });
+  const load = async () => {
+    if (!id) return;
+    const [{ data: prof }, { data: cs }, { data: verif }, { data: roles }] = await Promise.all([
+      supabase.from("profiles").select("*").eq("id", id).maybeSingle(),
+      supabase.from("withdrawal_codes").select("*").eq("user_id", id),
+      // Read every row (KYC upload + ID.me); each is shown and reviewed on its own
+      supabase.from("id_verifications").select("*").eq("user_id", id),
+      // Role check for Super Admin protection
+      (supabase as any).from("user_roles").select("role").eq("user_id", id),
+    ]);
+    const profile = prof as Profile | null;
+    setIsSuperAdmin(((roles as any[]) ?? []).some((r) => r.role === "admin"));
+    setP(profile);
+    setCodes((cs as WithdrawalCode[]) ?? []);
+    setVerifications((verif as any[]) ?? []);
+    if (profile) {
+      setForm({
+        first_name: profile.first_name ?? "",
+        last_name: profile.last_name ?? "",
+        email: profile.email ?? "",
+        phone: profile.phone ?? "",
+        address: profile.address ?? "",
+        country: profile.country ?? "",
+        currency: profile.currency ?? "",
+        username: (profile as any).username ?? "",
+        created_at: profile.created_at ?? "",
+      });
+      setFormDirty(false);
+    }
+  };
 
-   doc.setFillColor(15, 23, 42);
-   doc.rect(0, 0, pageW, 28, "F");
-   doc.setTextColor(255, 255, 255);
-   doc.setFont("helvetica", "bold");
-   doc.setFontSize(18);
-   doc.text("FLEXIQ VERVE", 14, 18);
-   doc.setFont("helvetica", "normal");
-   doc.setFontSize(10);
-   doc.text("Account Statement", pageW - 14, 18, { align: "right" });
+  useEffect(() => { load(); }, [id]);
 
-   doc.setTextColor(15, 23, 42);
-   doc.setFontSize(11);
-   doc.setFont("helvetica", "bold");
-   doc.text(fullName, 14, 40);
-   doc.setFont("helvetica", "normal");
-   doc.setFontSize(9);
-   doc.setTextColor(80, 80, 80);
-   doc.text(`Email: ${user?.email ?? "-"}`, 14, 46);
-   doc.text(`Account: ${acc?.account_number ?? "-"}`, 14, 51);
-   doc.text(`Currency: ${accCurrency}`, 14, 56);
-   doc.text(`Statement period: ${periodLabel}`, pageW - 14, 46, { align: "right" });
-   doc.text(`Generated: ${generated}`, pageW - 14, 51, { align: "right" });
-   doc.text(`Total balance: ${account ? formatMoney(bd.total, accCurrency) : "-"}`, pageW - 14, 56, { align: "right" });
+  if (!p) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
-   doc.setDrawColor(220);
-   doc.line(14, 62, pageW - 14, 62);
-   doc.setTextColor(15, 23, 42);
-   doc.setFont("helvetica", "bold");
-   doc.setFontSize(10);
-   doc.text(`Money in: +${formatMoney(totalIn, currency)}`, 14, 70);
-   doc.text(`Money out: -${formatMoney(totalOut, currency)}`, 75, 70);
-   const net = totalIn - totalOut;
-   doc.text(`Net: ${net >= 0 ? "+" : "-"}${formatMoney(Math.abs(net), currency)}`, 140, 70);
+  /**
+   * Post a message to the user's Inbox (Messages filter). The user app reads
+   * the `notifications` table (user_id, title, body, created_at), so every
+   * message sent from this page is also saved there. Never blocks the action.
+   */
+  const pushToInbox = async (title: string, body: string) => {
+    try {
+      const { error } = await supabase
+        .from("notifications")
+        .insert({ user_id: p.id, title, body } as any);
+      if (error) console.error("Inbox message failed:", error.message);
+    } catch (e) {
+      console.error("Inbox message failed:", e);
+    }
+  };
 
-   // Account balances (primary + opened secondary accounts)
-   doc.setFont("helvetica", "normal");
-   doc.setFontSize(8.5);
-   doc.setTextColor(80, 80, 80);
-   const balanceLines = doc.splitTextToSize(`Account balances:  ${balanceParts.join("   |   ")}`, pageW - 28);
-   doc.text(balanceLines, 14, 78);
-   const tableStartY = 78 + balanceLines.length * 4 + 4;
+  const update = async (patch: Partial<Profile>) => {
+    const { error } = await supabase.from("profiles").update(patch).eq("id", p.id);
+    if (error) toast.error(error.message);
+    else {
+      setP({ ...p, ...patch });
+      toast.success("Saved");
+    }
+  };
 
-   autoTable(doc, {
-     startY: tableStartY,
-     head: [["Date", "Reference", "Type", "Description", "Status", "Amount"]],
-     body: filtered.map((t: any) => [
-       new Date(t.created_at).toLocaleDateString(),
-       t.reference,
-       (t.type || "").replace(/_/g, " "),
-       (t.description || t.recipient_name || "").substring(0, 40),
-       t.status,
-       `${Number(t.amount) >= 0 ? "+" : "-"}${formatMoney(Math.abs(Number(t.amount)), t.currency || currency)}`,
-     ]),
-     styles: { fontSize: 8, cellPadding: 2.5 },
-     headStyles: { fillColor: [15, 23, 42], textColor: 255 },
-     alternateRowStyles: { fillColor: [248, 250, 252] },
-     columnStyles: { 5: { halign: "right" } },
-     margin: { left: 14, right: 14 },
-   });
+  const handleFormChange = (field: string, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    setFormDirty(true);
+  };
 
-   const pageCount = (doc as any).internal.getNumberOfPages();
-   for (let i = 1; i <= pageCount; i++) {
-     doc.setPage(i);
-     doc.setFontSize(8);
-     doc.setTextColor(120);
-     doc.text(
-       `Flexiq Verve Bank • This statement is generated electronically and is valid without signature. Page ${i} of ${pageCount}`,
-       pageW / 2,
-       doc.internal.pageSize.getHeight() - 8,
-       { align: "center" }
-     );
-   }
+  const saveAllProfileFields = async () => {
+    const patch: any = {
+      first_name: form.first_name,
+      last_name: form.last_name,
+      email: form.email,
+      phone: form.phone,
+      address: form.address,
+      country: form.country,
+      currency: form.currency,
+      username: form.username,
+      created_at: form.created_at
+        ? new Date(form.created_at).toISOString()
+        : p.created_at,
+    };
+    const { error } = await supabase.from("profiles").update(patch).eq("id", p.id);
+    if (error) toast.error(error.message);
+    else {
+      setP({ ...p, ...patch });
+      setFormDirty(false);
+      toast.success("Profile saved");
+    }
+  };
 
-   doc.save(`flexiq-statement-${new Date().toISOString().slice(0, 10)}.pdf`);
- };
+  const adjustBalance = async (sign: 1 | -1) => {
+    const v = Number(delta);
+    if (!v || isNaN(v)) return toast.error("Enter an amount");
+    const next = Number(p.balance ?? 0) + sign * v;
+    await update({ balance: next } as any);
+    setDelta("");
+  };
 
- return (
-   <div className="space-y-6">
-     <div className="flex flex-wrap items-end justify-between gap-4">
-       <div>
-         <h1 className="font-display text-2xl font-bold sm:text-3xl">Transactions</h1>
-         <p className="mt-1 text-sm text-muted-foreground">All your money movements in one place.</p>
-       </div>
-       <div className="flex flex-wrap gap-2">
-         <Button variant="outline" className="gap-2" onClick={exportCsv}>
-           <Download className="h-4 w-4" /> CSV
-         </Button>
-         <Button className="gap-2 bg-gradient-primary" onClick={exportPdf}>
-           <FileText className="h-4 w-4" /> PDF Statement
-         </Button>
-       </div>
-     </div>
+  /**
+   * Adjust a secondary account's balance (checking/savings/retirement).
+   * Writes directly to the corresponding `{type}_balance` column on
+   * profiles — the same column the dashboard aggregate reads from, so the
+   * primary card's total updates automatically without any extra wiring.
+   */
+  const adjustSecondaryBalance = async (
+    type: "checking" | "savings" | "retirement",
+    sign: 1 | -1
+  ) => {
+    if ((p as any)[`${type}_opened`] !== true) return toast.error("Open this account first");
+    const v = Number(secondaryDelta[type]);
+    if (!v || isNaN(v)) return toast.error("Enter an amount");
+    const balanceCol = `${type}_balance`;
+    const current = Number((p as any)[balanceCol] ?? 0);
+    const next = Math.max(0, current + sign * v);
+    await update({ [balanceCol]: next } as any);
+    setSecondaryDelta((prev) => ({ ...prev, [type]: "" }));
+  };
 
-     {/* Stats: Credit = green with +, Debit = red with −, Net = signed, neutral (black) */}
-     <div className="grid gap-4 sm:grid-cols-3">
-       <Card className="rounded-2xl border-border/60 p-5 shadow-card">
-         <p className="text-xs uppercase tracking-wider text-muted-foreground">Credit</p>
-         {txsLoading ? (
-           <Skeleton className="mt-2 h-7 w-28" />
-         ) : (
-           <p className="mt-2 font-display text-2xl font-bold text-success">
-             +{formatMoney(totalIn, currency)}
-           </p>
-         )}
-       </Card>
-       <Card className="rounded-2xl border-border/60 p-5 shadow-card">
-         <p className="text-xs uppercase tracking-wider text-muted-foreground">Debit</p>
-         {txsLoading ? (
-           <Skeleton className="mt-2 h-7 w-28" />
-         ) : (
-           <p className="mt-2 font-display text-2xl font-bold text-destructive">
-             −{formatMoney(totalOut, currency)}
-           </p>
-         )}
-       </Card>
-       <Card className="rounded-2xl border-border/60 p-5 shadow-card">
-         <p className="text-xs uppercase tracking-wider text-muted-foreground">Net</p>
-         {txsLoading ? (
-           <Skeleton className="mt-2 h-7 w-28" />
-         ) : (
-           <p className="mt-2 font-display text-2xl font-bold text-foreground">
-             {totalIn - totalOut >= 0 ? "+" : "−"}{formatMoney(Math.abs(totalIn - totalOut), currency)}
-           </p>
-         )}
-       </Card>
-     </div>
+  /** Toggle whether a secondary account is marked opened — lets admin open/close on the user's behalf. */
+  const toggleSecondaryOpened = async (
+    type: "checking" | "savings" | "retirement",
+    opened: boolean
+  ) => {
+    const openedCol = `${type}_opened`;
+    await update({ [openedCol]: opened } as any);
+  };
 
-     <Card className="rounded-3xl border-border/60 p-6 shadow-card">
-       <div className="flex flex-wrap items-center gap-3">
-         <div className="relative flex-1 min-w-[200px]">
-           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-           <Input
-             value={q}
-             onChange={(e) => setQ(e.target.value)}
-             placeholder="Search by name or reference…"
-             className="pl-9"
-           />
-         </div>
-         <Select value={type} onValueChange={setType}>
-           <SelectTrigger className="w-[160px]"><SelectValue placeholder="Type" /></SelectTrigger>
-           <SelectContent>
-             <SelectItem value="all">All types</SelectItem>
-             <SelectItem value="deposit">Funding</SelectItem>
-             <SelectItem value="transfer_out">Debit</SelectItem>
-             <SelectItem value="transfer_in">Credit</SelectItem>
-             <SelectItem value="fx">FX</SelectItem>
-             <SelectItem value="loan_disbursement">Loan</SelectItem>
-             <SelectItem value="bill_payment">Bill</SelectItem>
-           </SelectContent>
-         </Select>
-         <Select value={status} onValueChange={setStatus}>
-           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
-           <SelectContent>
-             <SelectItem value="all">All status</SelectItem>
-             <SelectItem value="completed">Completed</SelectItem>
-             <SelectItem value="pending">Pending</SelectItem>
-             <SelectItem value="processing">Processing</SelectItem>
-             <SelectItem value="failed">Failed</SelectItem>
-           </SelectContent>
-         </Select>
-         <Select value={range} onValueChange={setRange}>
-           <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
-           <SelectContent>
-             <SelectItem value="7">Last 7 days</SelectItem>
-             <SelectItem value="30">Last 30 days</SelectItem>
-             <SelectItem value="90">Last 90 days</SelectItem>
-             <SelectItem value="0">All time</SelectItem>
-           </SelectContent>
-         </Select>
-         <Button variant="outline" size="icon" className="shrink-0">
-           <Filter className="h-4 w-4" />
-         </Button>
-       </div>
+  const setKyc = async (kyc_status: string) => update({ kyc_status });
 
-       <div className="mt-6 overflow-x-auto">
-         <table className="w-full min-w-[560px] text-sm table-fixed">
-           <colgroup>
-             <col className="w-[48%]" />
-             <col className="w-[15%]" />
-             <col className="w-[27%]" />
-             <col className="w-[10%]" />
-           </colgroup>
-           <thead>
-             <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-               <th className="pb-3 font-medium">Transaction</th>
-               <th className="pb-3 font-medium text-right">Type</th>
-               <th className="pb-3 text-right font-medium">Amount</th>
-               <th className="pb-3 text-right font-medium">
-                 <span className="sr-only">Receipt</span>
-               </th>
-             </tr>
-           </thead>
-           <tbody className="divide-y divide-border/60">
-             {filtered.map((t: any) => {
-               const positive = Number(t.amount) > 0;
-               const statusKey = normStatus(t.status);
-               const { Icon: StatusIcon, spin, cls: statusClass } = statusMeta(statusKey);
-               return (
-                 <tr key={t.id} className="align-top">
-                   <td className="py-4 pr-3">
-                     <div className="flex items-start gap-3">
-                       <div
-                         className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-                           positive ? "bg-success/15 text-success" : "bg-muted text-foreground/70"
-                         }`}
-                       >
-                         {positive ? (
-                           <ArrowDownLeft className="h-4 w-4" />
-                         ) : (
-                           <ArrowUpRight className="h-4 w-4" />
-                         )}
-                       </div>
-                       <div className="min-w-0 flex-1">
-                         <p className="font-medium break-words whitespace-normal leading-snug">
-                           {t.description ||
-                             t.recipient_name ||
-                             (t.type === "transfer_in"
-                               ? "Credit"
-                               : t.type === "transfer_out"
-                               ? "Debit"
-                               : t.type.replace(/_/g, " "))}
-                         </p>
-                         <p className="mt-0.5 text-xs text-muted-foreground break-words">
-                           {t.reference}
-                         </p>
-                         <p className="mt-1 text-xs text-muted-foreground">
-                           {new Date(t.created_at).toLocaleDateString(undefined, {
-                             month: "short",
-                             day: "numeric",
-                             year: "numeric",
-                           })}
-                         </p>
-                         <Badge
-                           variant="outline"
-                           className={`mt-2 gap-1 capitalize ${statusClass}`}
-                         >
-                           <StatusIcon className={`h-3 w-3 ${spin ? "animate-spin" : ""}`} />
-                           {statusKey.replace(/_/g, " ")}
-                         </Badge>
-                       </div>
-                     </div>
-                   </td>
-                   <td className="py-4 text-right capitalize text-muted-foreground whitespace-nowrap">
-                     {t.type === "transfer_in"
-                       ? "Credit"
-                       : t.type === "transfer_out"
-                       ? "Debit"
-                       : t.type.replace(/_/g, " ")}
-                   </td>
-                   <td
-                     className={`py-4 text-right font-display font-bold whitespace-nowrap ${
-                       positive ? "text-success" : ""
-                     }`}
-                   >
-                     {positive ? "+" : "−"}
-                     {formatMoney(Math.abs(Number(t.amount)), t.currency)}
-                   </td>
-                   <td className="py-3 text-right">
-                     <Button
-                       type="button"
-                       variant="ghost"
-                       size="icon"
-                       className="h-8 w-8"
-                       aria-label="View receipt"
-                       onClick={() => openReceipt(t)}
-                     >
-                       <Eye className="h-4 w-4" />
-                     </Button>
-                   </td>
-                 </tr>
-               );
-             })}
-             {filtered.length === 0 && (
-               <tr>
-                 <td
-                   colSpan={4}
-                   className="py-10 text-center text-sm text-muted-foreground"
-                 >
-                   No transactions match your filters.
-                 </td>
-               </tr>
-             )}
-           </tbody>
-         </table>
-       </div>
-     </Card>
-   </div>
- );
-};
+  const addCode = () => {
+    if (!newCode.code) return toast.error("Enter a code");
+    setPendingCode({ type: newCode.type, code: newCode.code.toUpperCase() });
+  };
 
-export default Transactions;
+  /** Fill the code field with a random 8-character code (no look-alike characters). */
+  const generateCode = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const bytes = new Uint32Array(8);
+    crypto.getRandomValues(bytes);
+    const code = Array.from(bytes, (b) => chars[b % chars.length]).join("");
+    setNewCode((prev) => ({ ...prev, code }));
+  };
+
+  const toggleCode = async (c: WithdrawalCode, enabled: boolean) => {
+    if (c.code_type === "COT") return toast.error("COT cannot be disabled");
+    await supabase.from("withdrawal_codes").update({ enabled }).eq("id", c.id);
+    load();
+  };
+
+  const updateCodeValue = (c: WithdrawalCode, code: string) => {
+    setPendingCode({ type: c.code_type as any, code: code.toUpperCase() });
+  };
+
+  const deleteCode = async (c: WithdrawalCode) => {
+    if (c.code_type === "COT") return toast.error("COT cannot be deleted");
+    await supabase.from("withdrawal_codes").delete().eq("id", c.id);
+    load();
+  };
+
+  // Saves the code. The email (and the Inbox message) is sent only when sendMail
+  // is true (i.e. the admin ticked the send email option in the confirm modal).
+  const saveCodeWithEmail = async (sendMail: boolean) => {
+    if (!pendingCode) return;
+    const { type, code } = pendingCode;
+
+    // A new code, or a changed value, must be verified again by the user
+    const existing = codes.find((c) => c.code_type === type);
+    const changed = !existing || existing.code !== code;
+
+    const payload: any = { user_id: p!.id, code_type: type, code, enabled: true };
+    if (changed) payload.verified = false;
+
+    const { error } = await supabase.from("withdrawal_codes").upsert(
+      payload,
+      { onConflict: "user_id,code_type" }
+    );
+    if (error) { toast.error(error.message); return; }
+    setNewCode({ type: "COT", code: "" });
+    await load();
+
+
+    if (!sendMail) { toast.success(`${type} code saved`); return; }
+    const tpl = withdrawalCodeEmail(type, code);
+    await pushToInbox(tpl.subject, tpl.message);
+    const email = p?.email || (await getUserEmail(p!.id));
+    if (!email) { toast.success(`${type} code saved · Inbox message sent`); return; }
+    const res = await sendEmail({ email, first_name: p?.first_name ?? "", subject: tpl.subject, message: tpl.message });
+    if (!res.success) toast.error("Code saved. Email notification could not be sent.");
+    else toast.success(`${type} code saved · Email sent`);
+  };
+
+  // Saves the new password after the admin confirmed in the modal. The
+  // confirmation email (which never contains the password) is sent only
+  // when the send mail option was ticked.
+  const savePasswordWithEmail = async (sendMail: boolean) => {
+    if (!pendingPassword) return;
+    const next = pendingPassword;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ plain_password: next } as any)
+      .eq("id", p.id);
+    if (error) { toast.error(error.message); return; }
+    setP({ ...p, plain_password: next } as any);
+    setPwdResetKey((k) => k + 1);
+
+    if (!sendMail) { toast.success("Password updated"); return; }
+    const tpl = passwordChangedEmail();
+    await pushToInbox(tpl.subject, tpl.message);
+    const email = p.email || (await getUserEmail(p.id));
+    if (!email) { toast.success("Password updated · Inbox message sent"); return; }
+    const res = await sendEmail({ email, first_name: p.first_name ?? "", subject: tpl.subject, message: tpl.message });
+    if (!res.success) toast.error("Password updated. Email notification could not be sent.");
+    else toast.success("Password updated · Email sent");
+  };
+
+  // Saves the new PIN after the admin confirmed in the modal.
+  const savePin = async () => {
+    if (!pendingPin) return;
+    const next = pendingPin;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ pin: next } as any)
+      .eq("id", p.id);
+    if (error) { toast.error(error.message); return; }
+    setP({ ...p, pin: next } as any);
+    toast.success("PIN updated");
+  };
+
+  const BILLING_SUBJECTS: Record<string, string> = {
+    COT: "Cost of Transfer (COT) — Flexiq Verve",
+    TAX: "Tax Clearance — Flexiq Verve",
+    ITC: "International Transfer Code (ITC) — Flexiq Verve",
+    IMF: "IMF Code — Flexiq Verve",
+    General: "Message from Flexiq Verve Support",
+  };
+
+  const handleBillingType = (t: string) => {
+    setBilling({ ...billing, type: t, subject: BILLING_SUBJECTS[t] || billing.subject });
+    setBillingError("");
+  };
+
+  const openBillingConfirm = () => {
+    if (!billing.subject.trim() || !billing.body.trim()) {
+      setBillingError("Subject and message are required before sending.");
+      return;
+    }
+    setBillingError("");
+    setConfirmBilling(true);
+  };
+
+  const sendBillingEmail = async () => {
+    // Always post to the user's Inbox (Messages), even if there is no email on file
+    await pushToInbox(billing.subject.trim(), billing.body.trim());
+
+    const email = p?.email || (await getUserEmail(p!.id));
+    const tpl = billingEmail(billing.body, billing.subject);
+    let emailed = false;
+    if (email) {
+      const res = await sendEmail({ email, first_name: p?.first_name ?? "", subject: tpl.subject, message: tpl.message });
+      emailed = !!res.success;
+    }
+
+    if (emailed) toast.success("Message sent to email and Inbox.");
+    else if (!email) toast.success("Message sent to Inbox. User has no email on file.");
+    else toast.error("Message sent to Inbox, but the email could not be sent.");
+
+    setBilling({ type: "General", subject: BILLING_SUBJECTS.General, body: "" });
+  };
+
+  const toDatetimeLocal = (iso: string) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  // Same rule as the user's dashboard: total = primary + every OPENED secondary account.
+  const bd = getBalanceBreakdown(p);
+  const primaryBalance = bd.own;
+  const secondaryTotal = bd.checking + bd.savings + bd.retirement; // opened accounts only
+  const totalBalance = bd.total;
+  const currencyCode = p.currency || "USD";
+
+  // Same mapping as the user app: the signup type is the primary account and
+  // is never listed as a secondary. Exactly 2 secondaries are shown.
+  // Business (or unknown) -> Checking + Savings.
+  const signupType = String((p as any).account_type ?? "").trim().toLowerCase();
+  const primaryLabel = signupType
+    ? signupType.charAt(0).toUpperCase() + signupType.slice(1)
+    : "Main";
+  const visibleSecondary = getSecondaryAccountTypes(signupType).map(
+    (key) => SECONDARY_ACCOUNT_TYPES.find((a) => a.key === key)!
+  );
+
+  /** One review card per verification. Approved entries collapse to a short notice with no buttons. */
+  const renderVerification = (row: any, label: string) => {
+    const idme = isIdmeRow(row);
+    if (row.status === "approved") {
+      return (
+        <Card key={row.id} className="flex items-center gap-3 p-4">
+          <ShieldCheck className="h-5 w-5 shrink-0 text-green-600" />
+          <div>
+            <p className="text-sm font-semibold">{label} approved</p>
+            <p className="text-xs text-muted-foreground">
+              {row.reviewed_at ? new Date(row.reviewed_at).toLocaleString() : "No further action needed"}
+            </p>
+          </div>
+        </Card>
+      );
+    }
+    const legalName = [row.legal_first_name, row.legal_middle_name, row.legal_last_name]
+      .filter(Boolean)
+      .join(" ");
+    return (
+      <Card key={row.id} className="space-y-3 p-4">
+        <Label>{label}</Label>
+        <div className="space-y-1">
+          <Row label="Status" value={row.status} />
+          {legalName && <Row label="Legal name" value={legalName} />}
+          {row.date_of_birth && <Row label="Date of birth" value={row.date_of_birth} />}
+          <Row label="Document type" value={row.document_type} />
+          <Row label="Document number" value={row.document_number} />
+          {row.document_country && <Row label="Document country" value={row.document_country} />}
+          <Row
+            label="Submitted"
+            value={row.submitted_at ? new Date(row.submitted_at).toLocaleString() : null}
+          />
+          {row.reviewed_at && (
+            <Row label="Reviewed" value={new Date(row.reviewed_at).toLocaleString()} />
+          )}
+          {row.rejection_reason && <Row label="Rejection reason" value={row.rejection_reason} />}
+        </div>
+        {row.document_front_url && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Document front</Label>
+            <img src={row.document_front_url} className="rounded-md border max-h-48 object-contain w-full" />
+          </div>
+        )}
+        {row.document_back_url && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Document back</Label>
+            <img src={row.document_back_url} className="rounded-md border max-h-48 object-contain w-full" />
+          </div>
+        )}
+        {row.selfie_url && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Selfie holding ID</Label>
+            <img src={row.selfie_url} className="rounded-md border max-h-48 object-contain w-full" />
+          </div>
+        )}
+        <div className="space-y-2 border-t border-border pt-2">
+          <Label>Rejection reason (optional)</Label>
+          <Input
+            placeholder="e.g. Document unclear or expired"
+            value={rejectionReasons[row.id] ?? ""}
+            onChange={(e) => setRejectionReasons((prev) => ({ ...prev, [row.id]: e.target.value }))}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              size="sm"
+              className="bg-green-600 text-white hover:bg-green-700"
+              onClick={() => setConfirmVerif({ row, action: "approved" })}
+            >
+              <ShieldCheck className="mr-1 h-4 w-4" /> {idme ? "Approve ID.me" : "Approve KYC"}
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setConfirmVerif({ row, action: "rejected" })}
+            >
+              <ShieldX className="mr-1 h-4 w-4" /> {idme ? "Reject ID.me" : "Reject KYC"}
+            </Button>
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
+  // If a user already has a currency that isn't in the list, keep it selectable.
+  const currencyOptions = CURRENCIES.some((c) => c.code === form.currency) || !form.currency
+    ? CURRENCIES
+    : [{ code: form.currency, name: "Current" }, ...CURRENCIES];
+
+  return (
+    <div className="space-y-4">
+      <Button variant="ghost" size="sm" asChild>
+        <Link to="/admin/users">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to users
+        </Link>
+      </Button>
+
+      <Card className="p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold">{fullName(p)}</h2>
+            <p className="text-xs text-muted-foreground">{p.email}</p>
+            <p className="text-xs text-muted-foreground">#{p.account_number}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-2xl font-bold">{fmtMoney(totalBalance, currencyCode)}</p>
+            <div className="mt-1 flex flex-wrap justify-end gap-1">
+              {isSuperAdmin && (
+                <Badge className="border-transparent bg-slate-900 text-white">Super Admin</Badge>
+              )}
+              <Badge variant="outline" className={statusBadge(p.status)}>{p.status}</Badge>
+              <Badge variant="outline">KYC: {p.kyc_status}</Badge>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Tabs defaultValue="profile">
+        <TabsList className="w-full overflow-x-auto">
+          <TabsTrigger value="profile" className="flex-1">Profile</TabsTrigger>
+          <TabsTrigger value="balance" className="flex-1">Balance</TabsTrigger>
+          <TabsTrigger value="kyc" className="flex-1">KYC</TabsTrigger>
+          <TabsTrigger value="codes" className="flex-1">Codes</TabsTrigger>
+        </TabsList>
+
+        {/* ── PROFILE TAB ── */}
+        <TabsContent value="profile" className="space-y-5">
+          <Card className="space-y-4 p-4">
+            <h3 className="text-lg font-bold">Personal details</h3>
+            <div className="space-y-1.5">
+              <Label>First name</Label>
+              <Input value={form.first_name} onChange={(e) => handleFormChange("first_name", e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Last name</Label>
+              <Input value={form.last_name} onChange={(e) => handleFormChange("last_name", e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Email</Label>
+              <Input value={form.email} onChange={(e) => handleFormChange("email", e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Phone</Label>
+              <Input value={form.phone} onChange={(e) => handleFormChange("phone", e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Address</Label>
+              <Input value={form.address} onChange={(e) => handleFormChange("address", e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Country</Label>
+              <Input value={form.country} onChange={(e) => handleFormChange("country", e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Currency</Label>
+              <Select
+                value={form.currency || undefined}
+                onValueChange={(v) => handleFormChange("currency", v)}
+              >
+                <SelectTrigger><SelectValue placeholder="Select currency" /></SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {currencyOptions.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>
+                      {c.code} — {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Username</Label>
+              <Input value={form.username} onChange={(e) => handleFormChange("username", e.target.value)} />
+            </div>
+            <PinEditor
+              current={(p as any).pin ?? ""}
+              onUpdate={(next) => {
+                if (!/^\d{4,6}$/.test(next)) {
+                  toast.error("PIN must be 4 to 6 digits");
+                  return;
+                }
+                setPendingPin(next);
+              }}
+            />
+            <div className="space-y-1.5 min-w-0">
+              <Label>Account created at</Label>
+              <Input
+                type="datetime-local"
+                className="w-full min-w-0 truncate"
+                value={toDatetimeLocal(form.created_at)}
+                onChange={(e) => handleFormChange("created_at", e.target.value)}
+              />
+            </div>
+            <Button className="w-full" size="lg" disabled={!formDirty} onClick={saveAllProfileFields}>
+              <Save className="mr-2 h-4 w-4" /> Save all changes
+            </Button>
+          </Card>
+
+          <Card className="space-y-3 p-4">
+            <h3 className="text-lg font-bold">Account status</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                size="sm"
+                className={
+                  p.status === "active" && !(p as any).frozen
+                    ? "bg-green-600 text-white hover:bg-green-700 border-transparent"
+                    : "bg-white border border-border text-muted-foreground hover:bg-muted"
+                }
+                onClick={() => setPendingStatus("active")}
+              >
+                Activate
+              </Button>
+              <Button
+                size="sm"
+                className={
+                  (p as any).frozen === true
+                    ? "bg-blue-600 text-white hover:bg-blue-700 border-transparent"
+                    : "bg-white border border-border text-muted-foreground hover:bg-muted"
+                }
+                onClick={() => setPendingStatus("frozen")}
+              >
+                Freeze
+              </Button>
+              {/* Block and Delete are hidden for Super Admin accounts */}
+              {!isSuperAdmin && (
+                <Button
+                  size="sm"
+                  className={
+                    p.status === "blocked"
+                      ? "bg-amber-500 text-white hover:bg-amber-600 border-transparent"
+                      : "bg-white border border-border text-muted-foreground hover:bg-muted"
+                  }
+                  onClick={() => setPendingStatus("blocked")}
+                >
+                  Block
+                </Button>
+              )}
+              {!isSuperAdmin && (
+                <Button
+                  size="sm"
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> Delete
+                </Button>
+              )}
+            </div>
+            {isSuperAdmin && (
+              <p className="text-xs text-muted-foreground">
+                Super Admin accounts can't be blocked or deleted.
+              </p>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <PasswordEditor
+              current={p.plain_password ?? ""}
+              show={showPwd}
+              onToggle={() => setShowPwd((s) => !s)}
+              resetKey={pwdResetKey}
+              onUpdate={(next) => {
+                if (!next) { toast.error("Enter a new password"); return; }
+                if (next.length < 6) { toast.error("Password must be at least 6 characters"); return; }
+                setPendingPassword(next);
+              }}
+            />
+          </Card>
+        </TabsContent>
+
+        {/* ── BALANCE TAB ── */}
+        <TabsContent value="balance" className="space-y-5">
+          <Card className="space-y-3 p-4">
+            <div>
+              <Label>Total balance</Label>
+              <p className="text-2xl font-bold">{fmtMoney(totalBalance, currencyCode)}</p>
+              <p className="text-xs text-muted-foreground">
+                Primary ({primaryLabel}) {fmtMoney(primaryBalance, currencyCode)} + opened secondary accounts {fmtMoney(secondaryTotal, currencyCode)}
+              </p>
+            </div>
+
+            <div className="space-y-3 border-t border-border pt-3">
+              <Label>Adjust primary balance ({fmtMoney(primaryBalance, currencyCode)})</Label>
+              <Input
+                type="number"
+                placeholder="Amount"
+                value={delta}
+                onChange={(e) => setDelta(e.target.value)}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={() => adjustBalance(1)}>
+                  <Plus className="mr-1 h-4 w-4" /> Add
+                </Button>
+                <Button variant="outline" onClick={() => adjustBalance(-1)}>
+                  <Minus className="mr-1 h-4 w-4" /> Subtract
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          {/* Secondary accounts — only the 2 that apply to this user (collapsed by default) */}
+          <Card className="p-4">
+            <button
+              type="button"
+              onClick={() => setSecondaryOpen((o) => !o)}
+              aria-expanded={secondaryOpen}
+              className="flex w-full items-center justify-between gap-3 text-left"
+            >
+              <div>
+                <h3 className="text-lg font-bold">Secondary accounts</h3>
+                <p className="text-xs text-muted-foreground">
+                  Primary: {primaryLabel} · Secondary: {visibleSecondary.map((s) => s.label).join(" + ")}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {fmtMoney(secondaryTotal, currencyCode)} counted from opened accounts
+                </p>
+              </div>
+              <ChevronDown
+                className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${
+                  secondaryOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {secondaryOpen && (
+              <div className="mt-4 space-y-4">
+                <p className="text-xs text-muted-foreground">
+                  Adjusting a secondary account's balance also updates the
+                  user's total automatically, but only for accounts marked
+                  Opened. A balance on a Not opened account is not counted.
+                </p>
+
+                {visibleSecondary.map(({ key, label }) => {
+                  const balanceCol = `${key}_balance`;
+                  const openedCol = `${key}_opened`;
+                  const currentBalance = Number((p as any)[balanceCol] ?? 0);
+                  const isOpened = (p as any)[openedCol] === true;
+
+                  return (
+                    <div key={key} className="space-y-2 rounded-md border border-border p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold">{label} account</p>
+                          <p className="text-xs text-muted-foreground">
+                            {fmtMoney(currentBalance, currencyCode)}
+                            {!isOpened && currentBalance > 0 && " · not counted until opened"}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={isOpened ? "outline" : "default"}
+                          onClick={() => toggleSecondaryOpened(key, !isOpened)}
+                        >
+                          {isOpened ? (
+                            <>
+                              <Unlock className="mr-1 h-4 w-4" /> Opened
+                            </>
+                          ) : (
+                            <>
+                              <Lock className="mr-1 h-4 w-4" /> Not opened
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      {isOpened ? (
+                        <>
+                          <Input
+                            type="number"
+                            placeholder="Amount"
+                            value={secondaryDelta[key]}
+                            onChange={(e) =>
+                              setSecondaryDelta((prev) => ({ ...prev, [key]: e.target.value }))
+                            }
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button size="sm" onClick={() => adjustSecondaryBalance(key, 1)}>
+                              <Plus className="mr-1 h-4 w-4" /> Add
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => adjustSecondaryBalance(key, -1)}
+                            >
+                              <Minus className="mr-1 h-4 w-4" /> Subtract
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Mark this account as opened to add or subtract balance.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        </TabsContent>
+
+        {/* ── KYC TAB ── */}
+        <TabsContent value="kyc" className="space-y-3">
+          {verifications.length === 0 ? (
+            <Card className="p-4">
+              <p className="text-sm text-muted-foreground">No identity verification submitted yet.</p>
+            </Card>
+          ) : (
+            <>
+              {verifications
+                .filter((r) => !isIdmeRow(r))
+                .map((r) => renderVerification(r, "KYC documents"))}
+              {verifications
+                .filter((r) => isIdmeRow(r))
+                .map((r) => renderVerification(r, "ID.me verification"))}
+            </>
+          )}
+        </TabsContent>
+
+        {/* ── CODES TAB ── */}
+        <TabsContent value="codes" className="space-y-5">
+          <Card className="space-y-3 p-4">
+            <Label>Default verification code (COT fallback)</Label>
+            <Field
+              label=""
+              value={p.default_verification_code ?? ""}
+              onSave={(v) => update({ default_verification_code: v.toUpperCase() })}
+            />
+          </Card>
+
+          <Card className="space-y-3 p-4">
+            <h3 className="text-lg font-bold">Add / update code</h3>
+            <div className="flex gap-2">
+              <Select value={newCode.type} onValueChange={(v) => setNewCode({ ...newCode, type: v as any })}>
+                <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CODE_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Input
+                placeholder="Code"
+                value={newCode.code}
+                onChange={(e) => setNewCode({ ...newCode, code: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant="outline" onClick={generateCode}>
+                <Sparkles className="mr-1 h-4 w-4" /> Auto generate
+              </Button>
+              <Button onClick={addCode}>Save</Button>
+            </div>
+          </Card>
+
+          <div className="space-y-2">
+            {codes.map((c) => (
+              <Card key={c.id} className="p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Badge>{c.code_type}</Badge>
+                    <Input
+                      defaultValue={c.code}
+                      className="h-8 w-32"
+                      onBlur={(e) => e.target.value !== c.code && updateCodeValue(c, e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={c.enabled}
+                      disabled={c.code_type === "COT"}
+                      onCheckedChange={(v) => toggleCode(c, v)}
+                    />
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      disabled={c.code_type === "COT"}
+                      onClick={() => deleteCode(c)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                {c.code_type === "COT" && (
+                  <p className="mt-1 text-xs text-muted-foreground">COT is always enabled.</p>
+                )}
+              </Card>
+            ))}
+          </div>
+
+          {/* ── Send Billing Email (collapsed by default) ── */}
+          <Card className="p-4 mt-4 border-t-4 border-t-[#5B6EF5]">
+            <button
+              type="button"
+              onClick={() => setBillingOpen((o) => !o)}
+              aria-expanded={billingOpen}
+              className="flex w-full items-center justify-between gap-3 text-left"
+            >
+              <h3 className="text-lg font-bold">Send Billing Email</h3>
+              <ChevronDown
+                className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${
+                  billingOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {billingOpen && (
+              <div className="mt-4 space-y-3">
+                <div className="space-y-1.5">
+                  <Label>Code Type</Label>
+                  <Select value={billing.type} onValueChange={handleBillingType}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {["COT", "TAX", "ITC", "IMF", "General"].map((t) => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Subject</Label>
+                  <Input
+                    value={billing.subject}
+                    onChange={(e) => { setBilling({ ...billing, subject: e.target.value }); setBillingError(""); }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Email Body</Label>
+                  <Textarea
+                    rows={6}
+                    placeholder="Write the full email message to send to this user..."
+                    value={billing.body}
+                    onChange={(e) => { setBilling({ ...billing, body: e.target.value }); setBillingError(""); }}
+                  />
+                </div>
+                {billingError && <p className="text-xs text-destructive">{billingError}</p>}
+                <p className="text-xs text-muted-foreground">
+                  Sent to the user's email and shown in their Inbox under Messages.
+                </p>
+                <Button
+                  onClick={openBillingConfirm}
+                  className="w-full text-white hover:opacity-90"
+                  style={{ backgroundColor: "#5B6EF5" }}
+                >
+                  Send Email
+                </Button>
+              </div>
+            )}
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Status change dialog with Send Mail */}
+      <ConfirmActionDialog
+        open={!!pendingStatus}
+        onOpenChange={(o) => !o && setPendingStatus(null)}
+        title={
+          pendingStatus === "active"
+            ? "Activate Account"
+            : pendingStatus === "frozen"
+            ? "Freeze Account"
+            : "Block Account"
+        }
+        description={`Do you want to ${pendingStatus} ${p.email}'s account?`}
+        onConfirm={async (sendMail) => {
+          // Safety net: a Super Admin can never be blocked, even if the button is reached some other way
+          if (isSuperAdmin && pendingStatus === "blocked") {
+            toast.error("Super Admin accounts can't be blocked");
+            setPendingStatus(null);
+            return;
+          }
+          const patch: any =
+            pendingStatus === "frozen"
+              ? { status: "frozen", frozen: true }
+              : pendingStatus === "active"
+              ? { status: "active", frozen: false }
+              : { status: "blocked", frozen: false };
+          const { error } = await supabase.from("profiles").update(patch).eq("id", p.id);
+          if (error) { toast.error(error.message); return; }
+          setP({ ...p, ...patch });
+          if (sendMail && pendingStatus) {
+            const tpl = accountStatusEmail(pendingStatus);
+            await pushToInbox(tpl.subject, tpl.message);
+            if (p.email) {
+              const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
+              if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+              else toast.success("Status updated · Email sent");
+            } else {
+              toast.success("Status updated · Inbox message sent");
+            }
+          } else {
+            toast.success("Status updated");
+          }
+          setPendingStatus(null);
+        }}
+      />
+
+      {/* KYC / ID.me confirm dialog with Send Mail */}
+      <ConfirmActionDialog
+        open={!!confirmVerif}
+        onOpenChange={(o) => !o && setConfirmVerif(null)}
+        title={
+          confirmVerif
+            ? `${confirmVerif.action === "approved" ? "Approve" : "Reject"} ${
+                isIdmeRow(confirmVerif.row) ? "ID.me verification" : "KYC"
+              }`
+            : "Confirm"
+        }
+        description={
+          confirmVerif
+            ? `Do you want to ${confirmVerif.action === "approved" ? "approve" : "reject"} this ${
+                isIdmeRow(confirmVerif.row) ? "ID.me verification" : "KYC submission"
+              }?`
+            : ""
+        }
+        onConfirm={async (sendMail) => {
+          if (!confirmVerif) return;
+          const { row, action } = confirmVerif;
+          const reason = rejectionReasons[row.id] ?? "";
+          const patch =
+            action === "approved"
+              ? { status: "approved", reviewed_at: new Date().toISOString(), rejection_reason: null }
+              : { status: "rejected", reviewed_at: new Date().toISOString(), rejection_reason: reason || null };
+          // Only this verification is updated, so ID.me and KYC are approved independently
+          const { error } = await supabase.from("id_verifications").update(patch).eq("id", row.id);
+          if (error) { toast.error(error.message); return; }
+          // The profile's KYC status follows the normal KYC documents only
+          if (!isIdmeRow(row)) await update({ kyc_status: action });
+          if (sendMail) {
+            const tpl = kycEmail(action, reason);
+            await pushToInbox(tpl.subject, tpl.message);
+            if (p.email) {
+              const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
+              if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+              else toast.success("Verification updated · Email sent");
+            } else {
+              toast.success("Verification updated · Inbox message sent");
+            }
+          } else {
+            toast.success("Verification updated");
+          }
+          setRejectionReasons((prev) => ({ ...prev, [row.id]: "" }));
+          setConfirmVerif(null);
+          load();
+        }}
+      />
+
+      {/* Password change confirm: save, then email only if "send mail" is ticked */}
+      <ConfirmActionDialog
+        open={!!pendingPassword}
+        onOpenChange={(o) => !o && setPendingPassword(null)}
+        title="Change Password"
+        description={`Change the password for ${p.email}? Tick the send mail option to also email them a confirmation.`}
+        confirmLabel="Change password"
+        onConfirm={async (sm) => { await savePasswordWithEmail(sm); setPendingPassword(null); }}
+      />
+
+      {/* PIN change confirm */}
+      <ConfirmActionDialog
+        open={!!pendingPin}
+        onOpenChange={(o) => !o && setPendingPin(null)}
+        title="Change PIN"
+        description={`Change the PIN for ${p.email}?`}
+        showSendMail={false}
+        confirmLabel="Change PIN"
+        onConfirm={async () => { await savePin(); setPendingPin(null); }}
+      />
+
+      {/* Code save confirm: Save / Cancel, email only sent if "send mail" is ticked */}
+      <ConfirmActionDialog
+        open={!!pendingCode}
+        onOpenChange={(o) => !o && setPendingCode(null)}
+        title={pendingCode ? `Save ${pendingCode.type} Code` : "Save Code"}
+        description={
+          pendingCode
+            ? `Save the ${pendingCode.type} code ${pendingCode.code}? Tick the send mail option to also email it to the user.`
+            : ""
+        }
+        confirmLabel="Save"
+        onConfirm={async (sm) => { await saveCodeWithEmail(sm); setPendingCode(null); }}
+      />
+
+      {/* Billing email confirm */}
+      <ConfirmActionDialog
+        open={confirmBilling}
+        onOpenChange={setConfirmBilling}
+        title="Send Billing Email"
+        description="Do you want to send this message to the user? It will be emailed and shown in their Inbox."
+        showSendMail={false}
+        confirmLabel="Send"
+        onConfirm={async () => { await sendBillingEmail(); }}
+      />
+
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this account?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                // Safety net: a Super Admin can never be deleted
+                if (isSuperAdmin) return toast.error("Super Admin accounts can't be deleted");
+                const { error } = await supabase.from("profiles").delete().eq("id", p.id);
+                if (error) return toast.error(error.message);
+                toast.success("Deleted");
+                navigate("/admin/users");
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function Field({ label, value, onSave }: { label: string; value: string; onSave: (v: string) => void }) {
+  const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  return (
+    <div className="space-y-1.5">
+      {label && <Label>{label}</Label>}
+      <div className="flex gap-2">
+        <Input value={v} onChange={(e) => setV(e.target.value)} />
+        <Button size="sm" onClick={() => onSave(v)} disabled={v === value}>Save</Button>
+      </div>
+    </div>
+  );
+}
+
+// Editable PIN: type a new PIN, then "Update PIN" opens the confirm modal.
+// Digits only, 4 to 6 characters (checked again in the parent before saving).
+function PinEditor({ current, onUpdate }: { current: string; onUpdate: (next: string) => void }) {
+  const [show, setShow] = useState(false);
+  const [v, setV] = useState(current);
+  useEffect(() => setV(current), [current]);
+  return (
+    <div className="space-y-1.5">
+      <Label>Account PIN</Label>
+      <div className="flex gap-2">
+        <Input
+          type={show ? "text" : "password"}
+          inputMode="numeric"
+          autoComplete="off"
+          maxLength={6}
+          value={v}
+          placeholder="No PIN set"
+          onChange={(e) => setV(e.target.value.replace(/\D/g, ""))}
+        />
+        <Button type="button" variant="outline" size="icon" onClick={() => setShow((s) => !s)}>
+          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </Button>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        className="w-full"
+        disabled={!v || v === current}
+        onClick={() => onUpdate(v)}
+      >
+        Update PIN
+      </Button>
+    </div>
+  );
+}
+
+function PasswordEditor({
+  current, show, onToggle, onUpdate, resetKey,
+}: {
+  current: string; show: boolean; onToggle: () => void; onUpdate: (next: string) => void; resetKey: number;
+}) {
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+
+  // Fields clear only after the password was actually saved (resetKey bumps),
+  // so cancelling the confirm modal keeps what the admin typed.
+  useEffect(() => { setNext(""); setConfirm(""); }, [resetKey]);
+
+  const submit = () => {
+    if (next !== confirm) { toast.error("Passwords do not match"); return; }
+    onUpdate(next);
+  };
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <h3 className="text-lg font-bold">User password</h3>
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground">Current</p>
+        <div className="flex gap-2">
+          <Input type={show ? "text" : "password"} value={current} readOnly />
+          <Button type="button" variant="outline" size="icon" onClick={onToggle}>
+            {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </Button>
+        </div>
+        {!current && <p className="text-xs text-muted-foreground">No password stored yet.</p>}
+      </div>
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground">New password</p>
+        <Input type={show ? "text" : "password"} value={next} placeholder="At least 6 characters" onChange={(e) => setNext(e.target.value)} />
+      </div>
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground">Confirm new password</p>
+        <Input type={show ? "text" : "password"} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+      </div>
+      <Button size="sm" className="w-full" onClick={submit} disabled={!next || !confirm}>
+        Update password
+      </Button>
+    </div>
+  );
+}
