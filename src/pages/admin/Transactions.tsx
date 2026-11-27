@@ -145,6 +145,12 @@ export default function Transactions() {
           amount: row.displayAmount,
           recipient: row.recipient,
           recipient_name: row.recipient_name,
+          // Converted amount the receiver gets (FX)
+          converted_amount: row.converted_amount ?? row.to_amount ?? row.metadata?.converted_amount ?? row.metadata?.to_amount ?? null,
+          converted_currency: row.converted_currency ?? row.to_currency ?? row.metadata?.converted_currency ?? row.metadata?.to_currency ?? null,
+          to_amount: row.to_amount ?? null,
+          to_currency: row.to_currency ?? null,
+          metadata: row.metadata ?? null,
         });
 
     const res = await sendEmail({ email, first_name, ...tpl });
