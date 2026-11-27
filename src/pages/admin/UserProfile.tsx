@@ -56,6 +56,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { getBalanceBreakdown } from "@/hooks/useTotalBalance";
 import { getSecondaryAccountTypes } from "@/lib/accounts";
 
+// Admin check that works with either table name: `user_roles` or `user_role`.
+// A table that doesn't exist (or can't be read) is skipped instead of breaking the page.
+const ROLE_TABLES = ["user_roles", "user_role"] as const;
+
+async function fetchIsAdmin(userId: string): Promise<boolean> {
+  const results = await Promise.all(
+    ROLE_TABLES.map(async (table) => {
+      try {
+        const { data, error } = await (supabase as any).from(table).select("role").eq("user_id", userId);
+        if (error) return false;
+        return ((data as any[]) ?? []).some((r) => String(r.role).toLowerCase() === "admin");
+      } catch {
+        return false;
+      }
+    })
+  );
+  return results.some(Boolean);
+}
+
 const CODE_TYPES = ["COT", "TAX", "ITC", "IMF"] as const;
 
 const SECONDARY_ACCOUNT_TYPES = [
@@ -175,16 +194,16 @@ export default function UserProfile() {
 
   const load = async () => {
     if (!id) return;
-    const [{ data: prof }, { data: cs }, { data: verif }, { data: roles }] = await Promise.all([
+    const [{ data: prof }, { data: cs }, { data: verif }, isAdmin] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", id).maybeSingle(),
       supabase.from("withdrawal_codes").select("*").eq("user_id", id),
       // Read every row (KYC upload + ID.me); each is shown and reviewed on its own
       supabase.from("id_verifications").select("*").eq("user_id", id),
       // Role check for Super Admin protection
-      (supabase as any).from("user_roles").select("role").eq("user_id", id),
+      fetchIsAdmin(id),
     ]);
     const profile = prof as Profile | null;
-    setIsSuperAdmin(((roles as any[]) ?? []).some((r) => r.role === "admin"));
+    setIsSuperAdmin(isAdmin);
     setP(profile);
     setCodes((cs as WithdrawalCode[]) ?? []);
     setVerifications((verif as any[]) ?? []);
