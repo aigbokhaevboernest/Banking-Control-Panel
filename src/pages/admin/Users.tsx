@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MoreVertical, Eye, Ban, Trash2, CheckCircle2, Search } from "lucide-react";
+import { MoreVertical, Eye, Ban, Trash2, CheckCircle2, Search, Shield } from "lucide-react";
 import { fmtMoney, fullName } from "@/lib/format";
 import { toast } from "sonner";
 import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
@@ -37,21 +37,29 @@ const applicationStatusColor = (s: string) =>
     ? "bg-destructive/15 text-destructive"
     : "bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))]";
 
+type UserRow = Profile & { isSuperAdmin?: boolean };
+
 export default function Users() {
-  const [users, setUsers] = useState<Profile[]>([]);
+  const [users, setUsers] = useState<UserRow[]>([]);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "kyc" | "blocked">("all");
   const [loading, setLoading] = useState(true);
-  const [confirm, setConfirm] = useState<{ kind: "block" | "delete" | "approve"; user: Profile } | null>(null);
+  const [confirm, setConfirm] = useState<{ kind: "block" | "delete" | "approve"; user: UserRow } | null>(null);
 
   const load = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const [{ data, error }, { data: roles }] = await Promise.all([
+      supabase.from("profiles").select("*").order("created_at", { ascending: false }),
+      supabase.from("user_roles").select("user_id").eq("role", "admin"),
+    ]);
     if (error) toast.error(error.message);
-    setUsers((data as Profile[]) ?? []);
+
+    const adminIds = new Set((roles || []).map((r: any) => r.user_id));
+    const rows = ((data as Profile[]) ?? []).map((u) => ({
+      ...u,
+      isSuperAdmin: adminIds.has(u.id),
+    }));
+    setUsers(rows);
     setLoading(false);
   };
 
@@ -76,7 +84,8 @@ export default function Users() {
     [users, q, filter]
   );
 
-  const doBlock = async (u: Profile, sendMail: boolean) => {
+  const doBlock = async (u: UserRow, sendMail: boolean) => {
+    if (u.isSuperAdmin) return toast.error("Super Admin accounts cannot be blocked");
     const { error } = await supabase.from("profiles").update({ status: "blocked" }).eq("id", u.id);
     if (error) return toast.error(error.message);
     if (sendMail && u.email) {
@@ -90,7 +99,7 @@ export default function Users() {
     load();
   };
 
-  const doApprove = async (u: Profile, sendMail: boolean) => {
+  const doApprove = async (u: UserRow, sendMail: boolean) => {
     const { error } = await supabase
       .from("profiles")
       .update({ application_status: "approved" })
@@ -115,7 +124,8 @@ Flexiq Verve Support Team`,
     load();
   };
 
-  const doDelete = async (u: Profile) => {
+  const doDelete = async (u: UserRow) => {
+    if (u.isSuperAdmin) return toast.error("Super Admin accounts cannot be deleted");
     const { error } = await supabase.from("profiles").delete().eq("id", u.id);
     if (error) return toast.error(error.message);
     toast.success("User deleted");
@@ -158,12 +168,20 @@ Flexiq Verve Support Team`,
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="truncate font-semibold">{fullName(u)}</p>
+                      {u.isSuperAdmin && (
+                        <Badge className="bg-primary/15 text-primary" variant="outline">
+                          <Shield className="mr-1 h-3 w-3" />
+                          Super Admin
+                        </Badge>
+                      )}
                       <Badge className={statusColor(u.status)} variant="outline">
                         {u.status}
                       </Badge>
-                      <Badge className={applicationStatusColor(appStatus)} variant="outline">
-                        {appStatus}
-                      </Badge>
+                      {!u.isSuperAdmin && (
+                        <Badge className={applicationStatusColor(appStatus)} variant="outline">
+                          {appStatus}
+                        </Badge>
+                      )}
                     </div>
                     <p className="truncate text-xs text-muted-foreground">{u.email}</p>
                     <p className="mt-2 text-lg font-bold">
@@ -185,21 +203,27 @@ Flexiq Verve Support Team`,
                           <Eye className="mr-2 h-4 w-4" /> View user
                         </Link>
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setConfirm({ kind: "block", user: u })}>
-                        <Ban className="mr-2 h-4 w-4" /> Block
-                      </DropdownMenuItem>
-                      {appStatus === "pending" && (
+                      {!u.isSuperAdmin && (
+                        <DropdownMenuItem onClick={() => setConfirm({ kind: "block", user: u })}>
+                          <Ban className="mr-2 h-4 w-4" /> Block
+                        </DropdownMenuItem>
+                      )}
+                      {!u.isSuperAdmin && appStatus === "pending" && (
                         <DropdownMenuItem onClick={() => setConfirm({ kind: "approve", user: u })}>
                           <CheckCircle2 className="mr-2 h-4 w-4" /> Approve
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => setConfirm({ kind: "delete", user: u })}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" /> Delete
-                      </DropdownMenuItem>
+                      {!u.isSuperAdmin && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => setConfirm({ kind: "delete", user: u })}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" /> Delete
+                          </DropdownMenuItem>
+                        </>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
