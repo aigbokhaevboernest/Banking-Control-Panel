@@ -31,6 +31,79 @@ const STATUS_LABEL: Record<string, string> = {
   processing: "Mark Processing",
 };
 
+function Detail({ label, value }: { label: string; value: any }) {
+  if (value === null || value === undefined || value === "") return null;
+  return (
+    <p className="truncate text-xs text-muted-foreground">
+      <span className="font-medium text-foreground/80">{label}:</span>{" "}
+      {String(value)}
+    </p>
+  );
+}
+
+function TransactionDetails({ t }: { t: any }) {
+  const type = String(t.type || "").toLowerCase();
+  const isWire = type === "wire_transfer" || type === "wire";
+  const isFx = type === "fx" || type === "fx_transfer" || type.includes("fx");
+  const isLocal = type === "transfer_out" || (t.description || "").toLowerCase().includes("local");
+  const isDigital = t._table === "digital_payments" || type === "digital_payment";
+
+  const convertedAmount =
+    t.converted_amount ?? t.to_amount ?? t.metadata?.converted_amount ?? t.metadata?.to_amount;
+  const convertedCurrency =
+    t.converted_currency ?? t.to_currency ?? t.metadata?.converted_currency ?? t.metadata?.to_currency;
+
+  return (
+    <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+      <Detail label="Type" value={getTransactionLabel(t.type)} />
+      <Detail label="Reference" value={t.reference} />
+      <Detail label="Description" value={t.description} />
+
+      {/* Recipient / counterparty */}
+      <Detail label="Recipient" value={t.recipient_name || t.recipient} />
+      <Detail label="Recipient account" value={t.recipient_account} />
+      <Detail label="Bank" value={t.recipient_bank || t.bank_name} />
+      <Detail label="SWIFT / IBAN" value={t.swift_iban || t.iban || t.swift} />
+      <Detail label="SWIFT BIC" value={t.swift_bic} />
+      <Detail label="Routing number" value={t.routing_number} />
+      <Detail label="Country" value={t.recipient_country || t.country} />
+      <Detail label="ZIP" value={t.zip_code || t.bank_zip_code} />
+
+      {/* FX-specific */}
+      {(isFx || convertedAmount != null) && (
+        <>
+          <Detail
+            label="Converted amount"
+            value={
+              convertedAmount != null
+                ? fmtMoney(Number(convertedAmount), convertedCurrency || t.currency || "USD")
+                : null
+            }
+          />
+          <Detail label="Converted currency" value={convertedCurrency} />
+          <Detail
+            label="Exchange rate"
+            value={t.exchange_rate ?? t.metadata?.exchange_rate ?? t.rate}
+          />
+        </>
+      )}
+
+      {/* Digital */}
+      {isDigital && (
+        <>
+          <Detail label="Platform" value={t.platform} />
+          <Detail label="Note" value={t.note} />
+        </>
+      )}
+
+      {/* Generic extras that may exist */}
+      <Detail label="Purpose" value={t.purpose} />
+      <Detail label="Memo / note" value={t.memo || t.note} />
+      <Detail label="Account number (sender)" value={t.account_number} />
+    </div>
+  );
+}
+
 export default function Transactions() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
@@ -100,13 +173,12 @@ export default function Transactions() {
   const items = data ?? [];
 
   const applyStatus = async (row: any, s: string, sendMail: boolean) => {
-    // Internal Flexiq transfers must move money: run the ledger RPC, not a status-only update
     const isInternalTx =
       row._table === "transactions" &&
       (row.metadata?.internal === true || row.recipient_bank === "Flexiq Verve");
 
-    // Failing a transfer that was already debited must refund the sender
-    const needsRefund = s === "failed" && row._table === "transactions" && row.metadata?.debited === true;
+    const needsRefund =
+      s === "failed" && row._table === "transactions" && row.metadata?.debited === true;
 
     if ((s === "completed" && isInternalTx) || needsRefund) {
       const { error: rpcErr } = await (supabase as any).rpc(
@@ -114,7 +186,6 @@ export default function Transactions() {
         { p_tx_id: row._raw_id }
       );
       if (rpcErr) return toast.error(rpcErr.message);
-      // Balances changed: refresh everything that shows them
       qc.invalidateQueries({ queryKey: ["admin-transactions"] });
       qc.invalidateQueries({ queryKey: ["admin-users"] });
       qc.invalidateQueries({ queryKey: ["profiles"] });
@@ -130,31 +201,49 @@ export default function Transactions() {
       (prev ?? []).map((x) => (x._uid === row._uid ? { ...x, status: s } : x))
     );
 
-    if (!sendMail) { toast.success(`Marked ${s}`); return; }
+    if (!sendMail) {
+      toast.success(`Marked ${s}`);
+      return;
+    }
 
     const email = row.profiles?.email || (await getUserEmail(row.user_id));
-    const first_name = row.profiles?.first_name || (await getUserFirstName(row.user_id)) || "";
-    if (!email) { toast.success(`Marked ${s}`); return; }
+    const first_name =
+      row.profiles?.first_name || (await getUserFirstName(row.user_id)) || "";
+    if (!email) {
+      toast.success(`Marked ${s}`);
+      return;
+    }
 
-    const tpl = row._table === "digital_payments"
-      ? digitalPaymentEmail(s, row.platform, row.displayCurrency, row.displayAmount)
-      : transactionEmail(s, {
-          type: row.type,
-          description: row.description,
-          currency: row.displayCurrency,
-          amount: row.displayAmount,
-          recipient: row.recipient,
-          recipient_name: row.recipient_name,
-          // Converted amount the receiver gets (FX)
-          converted_amount: row.converted_amount ?? row.to_amount ?? row.metadata?.converted_amount ?? row.metadata?.to_amount ?? null,
-          converted_currency: row.converted_currency ?? row.to_currency ?? row.metadata?.converted_currency ?? row.metadata?.to_currency ?? null,
-          to_amount: row.to_amount ?? null,
-          to_currency: row.to_currency ?? null,
-          metadata: row.metadata ?? null,
-        });
+    const tpl =
+      row._table === "digital_payments"
+        ? digitalPaymentEmail(s, row.platform, row.displayCurrency, row.displayAmount)
+        : transactionEmail(s, {
+            type: row.type,
+            description: row.description,
+            currency: row.displayCurrency,
+            amount: row.displayAmount,
+            recipient: row.recipient,
+            recipient_name: row.recipient_name,
+            converted_amount:
+              row.converted_amount ??
+              row.to_amount ??
+              row.metadata?.converted_amount ??
+              row.metadata?.to_amount ??
+              null,
+            converted_currency:
+              row.converted_currency ??
+              row.to_currency ??
+              row.metadata?.converted_currency ??
+              row.metadata?.to_currency ??
+              null,
+            to_amount: row.to_amount ?? null,
+            to_currency: row.to_currency ?? null,
+            metadata: row.metadata ?? null,
+          });
 
     const res = await sendEmail({ email, first_name, ...tpl });
-    if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+    if (!res.success)
+      toast.error("Status updated. Email notification could not be sent.");
     else toast.success(`Marked ${s} · Email sent`);
   };
 
@@ -177,8 +266,12 @@ export default function Transactions() {
           !t.profiles?.email?.toLowerCase().includes(s) &&
           !t.profiles?.account_number?.toLowerCase().includes(s) &&
           !t.reference?.toLowerCase().includes(s) &&
-          !t.recipient?.toLowerCase().includes(s)
-        ) return false;
+          !t.recipient?.toLowerCase().includes(s) &&
+          !t.recipient_name?.toLowerCase().includes(s) &&
+          !t.description?.toLowerCase().includes(s) &&
+          !t.recipient_bank?.toLowerCase().includes(s)
+        )
+          return false;
       }
       return true;
     });
@@ -189,21 +282,27 @@ export default function Transactions() {
       {dialog}
       <Card className="space-y-3 p-3">
         <Input
-          placeholder="Search user, email, account, reference"
+          placeholder="Search user, email, account, reference, recipient, bank…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
         <div className="grid grid-cols-2 gap-2">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
             <SelectContent>
               {["all", "pending", "processing", "completed", "failed"].map((s) => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
           <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue placeholder="Type" />
+            </SelectTrigger>
             <SelectContent>
               {[
                 { value: "all", label: "All Types" },
@@ -217,7 +316,9 @@ export default function Transactions() {
                 { value: "transfer", label: "Transfer" },
                 { value: "transfer_in", label: "Incoming Transfer" },
               ].map((o) => (
-                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -227,7 +328,9 @@ export default function Transactions() {
       {isLoading ? (
         <RowSkeletonList rows={5} actions={3} />
       ) : filtered.length === 0 ? (
-        <Card className="p-6 text-center text-sm text-muted-foreground">No transactions</Card>
+        <Card className="p-6 text-center text-sm text-muted-foreground">
+          No transactions
+        </Card>
       ) : (
         filtered.map((t) => {
           const isCompleted = t.status === "completed";
@@ -237,46 +340,76 @@ export default function Transactions() {
           const dropdownValue = isPending ? "pending" : isProcessing ? "processing" : "";
 
           return (
-            <Card key={t._uid} className="p-4 overflow-hidden">
+            <Card key={t._uid} className="space-y-2 p-4 overflow-hidden">
+              {/* Header: user + amount + status */}
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{fullName(t.profiles)}</p>
+                  <p className="truncate text-sm font-semibold">{fullName(t.profiles)}</p>
                   <p className="truncate text-xs text-muted-foreground">{t.profiles?.email}</p>
-                  <p className="truncate text-xs text-muted-foreground">{formatTxDate(t.created_at)}</p>
-                  <p className="mt-1 break-words text-xs text-muted-foreground">
-                    {getTransactionLabel(t.type)}
-                    {t.recipient ? ` · ${t.recipient}` : ""}
-                    {t.reference ? ` · ${t.reference}` : ""}
+                  <p className="truncate text-xs text-muted-foreground">
+                    {t.profiles?.account_number ? `Acc ${t.profiles.account_number} · ` : ""}
+                    {formatTxDate(t.created_at)}
                   </p>
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-base font-bold whitespace-nowrap">
                     {fmtMoney(t.displayAmount, t.displayCurrency || "USD")}
                   </p>
-                  <Badge variant="outline" className={`mt-1 capitalize ${statusBadgeClasses(t.status)}`}>
+                  <Badge
+                    variant="outline"
+                    className={`mt-1 capitalize ${statusBadgeClasses(t.status)}`}
+                  >
                     {t.status}
                   </Badge>
                 </div>
               </div>
 
-              <div className="mt-3 grid grid-cols-3 gap-2">
+              {/* Full details the user entered */}
+              <TransactionDetails t={t} />
+
+              {/* Actions */}
+              <div className="grid grid-cols-3 gap-2 pt-1">
                 <Button
                   size="sm"
                   disabled={isCompleted}
-                  className={cn("bg-success text-success-foreground hover:bg-success/90", isCompleted && "opacity-40 cursor-not-allowed")}
+                  className={cn(
+                    "bg-success text-success-foreground hover:bg-success/90",
+                    isCompleted && "opacity-40 cursor-not-allowed"
+                  )}
                   onClick={() => requestStatus(t, "completed")}
-                >Approve</Button>
+                >
+                  Approve
+                </Button>
                 <Button
                   size="sm"
                   disabled={isFailed}
-                  className={cn("bg-destructive text-destructive-foreground hover:bg-destructive/90", isFailed && "opacity-40 cursor-not-allowed")}
+                  className={cn(
+                    "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+                    isFailed && "opacity-40 cursor-not-allowed"
+                  )}
                   onClick={() => requestStatus(t, "failed")}
-                >Failed</Button>
+                >
+                  Failed
+                </Button>
                 <Select value={dropdownValue} onValueChange={(v) => requestStatus(t, v)}>
-                  <SelectTrigger className="h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="pending" disabled={isPending} className={cn("capitalize", isPending && "opacity-40")}>Pending</SelectItem>
-                    <SelectItem value="processing" disabled={isProcessing} className={cn("capitalize", isProcessing && "opacity-40")}>Processing</SelectItem>
+                    <SelectItem
+                      value="pending"
+                      disabled={isPending}
+                      className={cn("capitalize", isPending && "opacity-40")}
+                    >
+                      Pending
+                    </SelectItem>
+                    <SelectItem
+                      value="processing"
+                      disabled={isProcessing}
+                      className={cn("capitalize", isProcessing && "opacity-40")}
+                    >
+                      Processing
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
