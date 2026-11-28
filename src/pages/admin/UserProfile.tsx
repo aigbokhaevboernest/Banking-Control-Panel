@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { pushToInbox as pushInbox } from "@/lib/inbox";
 import type { Profile, WithdrawalCode } from "@/types/db";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -232,16 +233,7 @@ export default function UserProfile() {
    * the `notifications` table (user_id, title, body, created_at), so every
    * message sent from this page is also saved there. Never blocks the action.
    */
-  const pushToInbox = async (title: string, body: string) => {
-    try {
-      const { error } = await supabase
-        .from("notifications")
-        .insert({ user_id: p.id, title, body } as any);
-      if (error) console.error("Inbox message failed:", error.message);
-    } catch (e) {
-      console.error("Inbox message failed:", e);
-    }
-  };
+  const pushToInbox = (title: string, body: string) => pushInbox(p.id, title, body);
 
   const update = async (patch: Partial<Profile>) => {
     const { error } = await supabase.from("profiles").update(patch).eq("id", p.id);
@@ -371,9 +363,10 @@ export default function UserProfile() {
     await load();
 
 
-    if (!sendMail) { toast.success(`${type} code saved`); return; }
+    // Always save the code to the user's Inbox; email is optional
     const tpl = withdrawalCodeEmail(type, code);
     await pushToInbox(tpl.subject, tpl.message);
+    if (!sendMail) { toast.success(`${type} code saved · Inbox message sent`); return; }
     const email = p?.email || (await getUserEmail(p!.id));
     if (!email) { toast.success(`${type} code saved · Inbox message sent`); return; }
     const res = await sendEmail({ email, first_name: p?.first_name ?? "", subject: tpl.subject, message: tpl.message });
@@ -395,9 +388,10 @@ export default function UserProfile() {
     setP({ ...p, plain_password: next } as any);
     setPwdResetKey((k) => k + 1);
 
-    if (!sendMail) { toast.success("Password updated"); return; }
+    // Always notify the user in their Inbox; email is optional
     const tpl = passwordChangedEmail();
     await pushToInbox(tpl.subject, tpl.message);
+    if (!sendMail) { toast.success("Password updated · Inbox message sent"); return; }
     const email = p.email || (await getUserEmail(p.id));
     if (!email) { toast.success("Password updated · Inbox message sent"); return; }
     const res = await sendEmail({ email, first_name: p.first_name ?? "", subject: tpl.subject, message: tpl.message });
@@ -1060,9 +1054,11 @@ export default function UserProfile() {
           const { error } = await supabase.from("profiles").update(patch).eq("id", p.id);
           if (error) { toast.error(error.message); return; }
           setP({ ...p, ...patch });
-          if (sendMail && pendingStatus) {
-            const tpl = accountStatusEmail(pendingStatus);
-            await pushToInbox(tpl.subject, tpl.message);
+          // Always notify the user in their Inbox; email is optional
+          const statusTpl = pendingStatus ? accountStatusEmail(pendingStatus) : null;
+          if (statusTpl) await pushToInbox(statusTpl.subject, statusTpl.message);
+          if (sendMail && statusTpl) {
+            const tpl = statusTpl;
             if (p.email) {
               const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
               if (!res.success) toast.error("Status updated. Email notification could not be sent.");
@@ -1071,7 +1067,7 @@ export default function UserProfile() {
               toast.success("Status updated · Inbox message sent");
             }
           } else {
-            toast.success("Status updated");
+            toast.success("Status updated · Inbox message sent");
           }
           setPendingStatus(null);
         }}
@@ -1108,9 +1104,11 @@ export default function UserProfile() {
           if (error) { toast.error(error.message); return; }
           // The profile's KYC status follows the normal KYC documents only
           if (!isIdmeRow(row)) await update({ kyc_status: action });
+          // Always notify the user in their Inbox; email is optional
+          const kycTpl = kycEmail(action, reason);
+          await pushToInbox(kycTpl.subject, kycTpl.message);
           if (sendMail) {
-            const tpl = kycEmail(action, reason);
-            await pushToInbox(tpl.subject, tpl.message);
+            const tpl = kycTpl;
             if (p.email) {
               const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
               if (!res.success) toast.error("Status updated. Email notification could not be sent.");
@@ -1119,7 +1117,7 @@ export default function UserProfile() {
               toast.success("Verification updated · Inbox message sent");
             }
           } else {
-            toast.success("Verification updated");
+            toast.success("Verification updated · Inbox message sent");
           }
           setRejectionReasons((prev) => ({ ...prev, [row.id]: "" }));
           setConfirmVerif(null);
