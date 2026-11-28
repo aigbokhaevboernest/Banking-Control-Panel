@@ -15,6 +15,7 @@ import { statusBadgeClasses } from "@/lib/statusColors";
 import { useConfirmAction } from "@/components/admin/ConfirmActionDialog";
 import { RowSkeletonList } from "@/components/admin/RowSkeleton";
 import { sendEmail, getUserEmail, getUserFirstName } from "@/lib/sendEmail";
+import { pushToInbox } from "@/lib/inbox";
 import { wireTransferEmail, localTransferEmail, digitalPaymentEmail } from "@/lib/emailTemplates";
 import { cn } from "@/lib/utils";
 
@@ -102,6 +103,16 @@ if (useRpc) {
       (prev ?? []).map((x) => (x.id === row.id ? { ...x, status: newStatus } : x))
     );
 
+    // Always save to the user's Inbox; email is optional
+    const recipient = row.recipient_name || row.recipient || null;
+    const tpl =
+      kind === "wire"
+        ? wireTransferEmail(newStatus, row.currency, row.amount, recipient)
+        : kind === "local"
+        ? localTransferEmail(newStatus, row.currency, row.amount, recipient)
+        : digitalPaymentEmail(newStatus, row.platform, row.currency, row.amount);
+    await pushToInbox(row.user_id, tpl.subject, tpl.message);
+
     if (!sendMail) {
       toast.success(`Marked ${newStatus}`);
       return;
@@ -113,13 +124,6 @@ const first_name = row.profiles?.first_name || (await getUserFirstName(row.user_
       toast.success(`Marked ${newStatus}`);
       return;
     }
-    const recipient = row.recipient_name || row.recipient || null;
-    const tpl =
-      kind === "wire"
-        ? wireTransferEmail(newStatus, row.currency, row.amount, recipient)
-        : kind === "local"
-        ? localTransferEmail(newStatus, row.currency, row.amount, recipient)
-        : digitalPaymentEmail(newStatus, row.platform, row.currency, row.amount);
 
 const res = await sendEmail({ email, first_name, ...tpl });
     if (!res.success) toast.error("Status updated. Email notification could not be sent.");
