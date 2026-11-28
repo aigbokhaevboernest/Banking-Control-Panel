@@ -326,21 +326,33 @@ export function kycEmail(status: "approved" | "rejected" | string, reason?: stri
   };
 }
 
+/**
+ * Deposit notification.
+ * `credited` = whether the admin actually added the funds to the user's balance.
+ * The email only claims the money was credited when it really was.
+ */
 export function depositEmail(
   status: "approved" | "declined" | "rejected" | string,
   currency: string | null | undefined,
   amount: number | null | undefined,
+  credited: boolean = false,
 ): EmailTemplate {
   const amt = money(currency, amount);
   if (String(status).toLowerCase() === "approved") {
+    if (credited) {
+      return {
+        subject: "Deposit Received",
+        message: `Your deposit of ${amt} has been approved and credited to your account balance.${FOOTER}`,
+      };
+    }
     return {
-      subject: "Deposit Received",
-      message: `Your deposit of ${amt} has been received and credited to your account.${FOOTER}`,
+      subject: "Deposit Approved",
+      message: `Your deposit of ${amt} has been approved. Please check your dashboard for the latest status of your account.${FOOTER}`,
     };
   }
   return {
     subject: "Deposit Declined",
-    message: `Your deposit request of ${amt} has been declined. Please try again.${FOOTER}`,
+    message: `Your deposit request of ${amt} has been declined. Please try again or contact support if you believe this is a mistake.${FOOTER}`,
   };
 }
 
