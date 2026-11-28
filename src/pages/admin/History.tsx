@@ -207,6 +207,7 @@ export default function History() {
       const res = await sendEmail({
         email,
         first_name: r.profiles?.first_name ?? "",
+        user_id: r.user_id,
         subject: "New Login to Your Account — Flexiq Verve",
         message:
 `We noticed a new sign-in to your Flexiq Verve account.<br/><br/>
