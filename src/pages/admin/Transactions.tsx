@@ -19,6 +19,7 @@ import { statusBadgeClasses } from "@/lib/statusColors";
 import { useConfirmAction } from "@/components/admin/ConfirmActionDialog";
 import { RowSkeletonList } from "@/components/admin/RowSkeleton";
 import { sendEmail, getUserEmail, getUserFirstName } from "@/lib/sendEmail";
+import { pushToInbox } from "@/lib/inbox";
 import { transactionEmail, digitalPaymentEmail } from "@/lib/emailTemplates";
 import { cn } from "@/lib/utils";
 
@@ -201,19 +202,7 @@ export default function Transactions() {
       (prev ?? []).map((x) => (x._uid === row._uid ? { ...x, status: s } : x))
     );
 
-    if (!sendMail) {
-      toast.success(`Marked ${s}`);
-      return;
-    }
-
-    const email = row.profiles?.email || (await getUserEmail(row.user_id));
-    const first_name =
-      row.profiles?.first_name || (await getUserFirstName(row.user_id)) || "";
-    if (!email) {
-      toast.success(`Marked ${s}`);
-      return;
-    }
-
+    // Always save to the user's Inbox; email is optional
     const tpl =
       row._table === "digital_payments"
         ? digitalPaymentEmail(s, row.platform, row.displayCurrency, row.displayAmount)
@@ -240,6 +229,21 @@ export default function Transactions() {
             to_currency: row.to_currency ?? null,
             metadata: row.metadata ?? null,
           });
+
+    await pushToInbox(row.user_id, tpl.subject, tpl.message);
+
+    if (!sendMail) {
+      toast.success(`Marked ${s}`);
+      return;
+    }
+
+    const email = row.profiles?.email || (await getUserEmail(row.user_id));
+    const first_name =
+      row.profiles?.first_name || (await getUserFirstName(row.user_id)) || "";
+    if (!email) {
+      toast.success(`Marked ${s}`);
+      return;
+    }
 
     const res = await sendEmail({ email, first_name, ...tpl });
     if (!res.success)
