@@ -1,0 +1,504 @@
+diff --git a/src/lib/inbox.ts b/src/lib/inbox.ts
+new file mode 100644
+index 0000000..52e0f1c
+--- /dev/null
++++ b/src/lib/inbox.ts
+@@ -0,0 +1,62 @@
++import { supabase } from "@/lib/supabase";
++import { toast } from "sonner";
++
++/** Convert an email body (which may contain HTML) to plain text for the Inbox. */
++export function toPlainText(input: string | null | undefined): string {
++  return String(input ?? "")
++    .replace(/<br\s*\/?>/gi, "\n")
++    .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
++    .replace(/<[^>]+>/g, "")
++    .replace(/&nbsp;/gi, " ")
++    .replace(/&amp;/gi, "&")
++    .replace(/&lt;/gi, "<")
++    .replace(/&gt;/gi, ">")
++    .replace(/&quot;/gi, '"')
++    .replace(/&#39;/gi, "'")
++    .replace(/[ \t]+\n/g, "\n")
++    .replace(/\n{3,}/g, "\n\n")
++    .trim();
++}
++
++// Guards against the same message being written twice when a call site both
++// pushes explicitly and passes user_id to sendEmail().
++const recent = new Map<string, number>();
++const DEDUPE_MS = 8000;
++
++/**
++ * Posts a message to the user's Inbox (Messages tab in the user app, which
++ * reads public.notifications). Never throws and never blocks the caller:
++ * on failure it logs and shows a toast, but the admin action still stands.
++ * Returns true when the row was saved.
++ */
++export async function pushToInbox(
++  userId: string | null | undefined,
++  title: string,
++  body: string,
++): Promise<boolean> {
++  if (!userId) return false;
++  try {
++    const cleanTitle = toPlainText(title) || "Notification";
++    const cleanBody = toPlainText(body);
++
++    const key = `${userId}|${cleanTitle}|${cleanBody}`;
++    const now = Date.now();
++    const last = recent.get(key);
++    if (last && now - last < DEDUPE_MS) return true;
++    recent.set(key, now);
++
++    const { error } = await supabase
++      .from("notifications")
++      .insert({ user_id: userId, title: cleanTitle, body: cleanBody, read: false } as any);
++    if (error) {
++      recent.delete(key);
++      console.error("Inbox message failed:", error.message);
++      toast.error(`Inbox message could not be saved: ${error.message}`);
++      return false;
++    }
++    return true;
++  } catch (e) {
++    console.error("Inbox message failed:", e);
++    return false;
++  }
++}
+diff --git a/src/lib/notify.ts b/src/lib/notify.ts
+index 9421616..4845012 100644
+--- a/src/lib/notify.ts
++++ b/src/lib/notify.ts
+@@ -1,4 +1,5 @@
+ import { supabase } from "@/lib/supabase";
++import { pushToInbox } from "@/lib/inbox";
+ 
+ /**
+  * Sends an email notification via a Supabase Edge Function named `send-email`.
+@@ -18,6 +19,10 @@ export async function sendEmail(opts: {
+   user_id?: string | null;
+ }) {
+   const { to, subject, html, text, user_id } = opts;
++
++  // Inbox first: saved even when there is no email address or the email fails
++  if (user_id) await pushToInbox(user_id, subject, text ?? html ?? subject);
++
+   if (!to) return { ok: false, error: "Missing recipient" };
+ 
+   // Try edge function (no-op if not deployed)
+@@ -29,19 +34,5 @@ export async function sendEmail(opts: {
+     console.warn("send-email edge function not available", e);
+   }
+ 
+-  // Best-effort in-app notification (ignore if table doesn't exist)
+-  if (user_id) {
+-    try {
+-      await supabase.from("notifications").insert({
+-        user_id,
+-        title: subject,
+-        body: text ?? html ?? subject,
+-        read: false,
+-      });
+-    } catch (e) {
+-      // ignore
+-    }
+-  }
+-
+   return { ok: true };
+ }
+diff --git a/src/lib/sendEmail.ts b/src/lib/sendEmail.ts
+index 3a755ba..4494432 100644
+--- a/src/lib/sendEmail.ts
++++ b/src/lib/sendEmail.ts
+@@ -1,4 +1,5 @@
+ import { supabase } from "@/lib/supabase";
++import { pushToInbox } from "@/lib/inbox";
+ 
+ export interface SendEmailArgs {
+  email: string;
+@@ -6,6 +7,8 @@ export interface SendEmailArgs {
+  first_name?: string;
+  html?: string;
+  message?: string;
++ /** When set, the message is also saved to this user's Inbox (never blocks). */
++ user_id?: string | null;
+ }
+ 
+ export interface SendEmailResult {
+@@ -24,7 +27,10 @@ export async function sendEmail({
+  first_name,
+  html,
+  message,
++ user_id,
+ }: SendEmailArgs): Promise<SendEmailResult> {
++ // Always save to the user's Inbox first, even if the email fails or is missing
++ if (user_id) await pushToInbox(user_id, subject, message || html || "");
+  try {
+    if (!email) return { success: false, error: "Missing recipient email" };
+    // Always send as message — edge function expects "message" field
+diff --git a/src/pages/admin/Deposits.tsx b/src/pages/admin/Deposits.tsx
+index f02a8d6..03e5606 100644
+--- a/src/pages/admin/Deposits.tsx
++++ b/src/pages/admin/Deposits.tsx
+@@ -9,6 +9,7 @@ import { RowSkeletonList } from "@/components/admin/RowSkeleton";
+ import { sendEmail, getUserEmail } from "@/lib/sendEmail";
+ import { depositEmail } from "@/lib/emailTemplates";
+ import { toast } from "sonner";
++import { pushToInbox } from "@/lib/inbox";
+ 
+ // "main" = deposit_requests (primary balance)
+ // "wallet" = wallet_deposit_requests (a specific currency wallet)
+@@ -102,14 +103,17 @@ export default function Deposits() {
+       prev.map((x) => (x.id === d.id && x.source === d.source ? { ...x, status: dbStatus } : x))
+     );
+ 
++    // Always save to the user's Inbox; email is optional
++    const cur = (isWallet ? d.wallet_currency : d.currency) || "USD";
++    const tpl = depositEmail(status, cur, amount, shouldCredit);
++    await pushToInbox(d.user_id, tpl.subject, tpl.message);
++
+     const label = shouldCredit ? "Deposit approved · funds added" : `Deposit ${status}`;
+     if (!sendMail) { toast.success(label); return; }
+ 
+     const email = d.profiles?.email || (await getUserEmail(d.user_id));
+     if (!email) { toast.success(label); return; }
+ 
+-    const cur = (isWallet ? d.wallet_currency : d.currency) || "USD";
+-    const tpl = depositEmail(status, cur, amount, shouldCredit);
+     const res = await sendEmail({ email, first_name: d.profiles?.first_name ?? "", ...tpl });
+     if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+     else toast.success(`${label} · Email sent`);
+diff --git a/src/pages/admin/History.tsx b/src/pages/admin/History.tsx
+index db47750..58586b6 100644
+--- a/src/pages/admin/History.tsx
++++ b/src/pages/admin/History.tsx
+@@ -207,6 +207,7 @@ export default function History() {
+       const res = await sendEmail({
+         email,
+         first_name: r.profiles?.first_name ?? "",
++        user_id: r.user_id,
+         subject: "New Login to Your Account — Flexiq Verve",
+         message:
+ `We noticed a new sign-in to your Flexiq Verve account.<br/><br/>
+diff --git a/src/pages/admin/Loans.tsx b/src/pages/admin/Loans.tsx
+index acf7015..19144ee 100644
+--- a/src/pages/admin/Loans.tsx
++++ b/src/pages/admin/Loans.tsx
+@@ -15,6 +15,7 @@ import { RowSkeletonList } from "@/components/admin/RowSkeleton";
+ import { sendEmail, getUserEmail } from "@/lib/sendEmail";
+ import { loanStatusEmail, loanCodeEmail } from "@/lib/emailTemplates";
+ import { lockCodeEmail } from "@/lib/lockEmails";
++import { pushToInbox } from "@/lib/inbox";
+ 
+ const genCode = () => Math.random().toString(36).substring(2, 10).toUpperCase();
+ 
+@@ -57,10 +58,13 @@ function LoansList() {
+     if (error) return toast.error(error.message);
+     setItems((prev) => prev.map((x) => (x.id === loan.id ? { ...x, status: s } : x)));
+ 
++    // Always save to the user's Inbox; email is optional
++    const tpl = loanStatusEmail(s, loan.currency, loan.loan_amount ?? loan.amount);
++    await pushToInbox(loan.user_id, tpl.subject, tpl.message);
++
+     if (!sendMail) { toast.success(s); return; }
+     const email = loan.profiles?.email || (await getUserEmail(loan.user_id));
+     if (!email) { toast.success(s); return; }
+-    const tpl = loanStatusEmail(s, loan.currency, loan.loan_amount ?? loan.amount);
+     const res = await sendEmail({ email, first_name: loan.profiles?.first_name ?? "", ...tpl });
+     if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+     else toast.success(`${s} · Email sent`);
+@@ -96,11 +100,14 @@ function LoansList() {
+       )
+     );
+ 
+-    if (!sendMail) { toast.success("Code generated."); setGenerating(null); return; }
++    // Always save the code to the user's Inbox; email is optional
++    const tpl = loanCodeEmail(code);
++    await pushToInbox(loan.user_id, tpl.subject, tpl.message);
++
++    if (!sendMail) { toast.success("Code generated · sent to Inbox."); setGenerating(null); return; }
+ 
+     const email = loan.profiles?.email || (await getUserEmail(loan.user_id));
+     if (email) {
+-      const tpl = loanCodeEmail(code);
+       const res = await sendEmail({ email, first_name: loan.profiles?.first_name ?? "", ...tpl });
+       if (!res.success) toast.error("Code saved. Email could not be sent.");
+       else toast.success("Code generated & emailed to user!");
+@@ -294,16 +301,19 @@ function LocksList() {
+ 
+     setCodes((prev) => ({ ...prev, [lock.id]: { lock_id: lock.id, code, used: false, failed_attempts: 0 } }));
+ 
+-    if (!sendMail) { toast.success("Code generated."); setGenerating(null); return; }
++    // Always save the code to the user's Inbox; email is optional
++    const tpl = lockCodeEmail({
++      code,
++      ref: refOf(lock.id),
++      amount: Number(lock.amount),
++      currency: lock.currency,
++    });
++    await pushToInbox(lock.user_id, tpl.subject, tpl.message);
++
++    if (!sendMail) { toast.success("Code generated · sent to Inbox."); setGenerating(null); return; }
+ 
+     const email = lock.profiles?.email || (await getUserEmail(lock.user_id));
+     if (email) {
+-      const tpl = lockCodeEmail({
+-        code,
+-        ref: refOf(lock.id),
+-        amount: Number(lock.amount),
+-        currency: lock.currency,
+-      });
+       const res = await sendEmail({ email, first_name: lock.profiles?.first_name ?? "", ...tpl });
+       if (!res.success) toast.error("Code saved. Email could not be sent.");
+       else toast.success("Code generated & emailed to user!");
+diff --git a/src/pages/admin/StatusManager.tsx b/src/pages/admin/StatusManager.tsx
+index a2fe234..dd0cbc5 100644
+--- a/src/pages/admin/StatusManager.tsx
++++ b/src/pages/admin/StatusManager.tsx
+@@ -15,6 +15,7 @@ import { statusBadgeClasses } from "@/lib/statusColors";
+ import { useConfirmAction } from "@/components/admin/ConfirmActionDialog";
+ import { RowSkeletonList } from "@/components/admin/RowSkeleton";
+ import { sendEmail, getUserEmail, getUserFirstName } from "@/lib/sendEmail";
++import { pushToInbox } from "@/lib/inbox";
+ import { wireTransferEmail, localTransferEmail, digitalPaymentEmail } from "@/lib/emailTemplates";
+ import { cn } from "@/lib/utils";
+ 
+@@ -102,6 +103,16 @@ if (useRpc) {
+       (prev ?? []).map((x) => (x.id === row.id ? { ...x, status: newStatus } : x))
+     );
+ 
++    // Always save to the user's Inbox; email is optional
++    const recipient = row.recipient_name || row.recipient || null;
++    const tpl =
++      kind === "wire"
++        ? wireTransferEmail(newStatus, row.currency, row.amount, recipient)
++        : kind === "local"
++        ? localTransferEmail(newStatus, row.currency, row.amount, recipient)
++        : digitalPaymentEmail(newStatus, row.platform, row.currency, row.amount);
++    await pushToInbox(row.user_id, tpl.subject, tpl.message);
++
+     if (!sendMail) {
+       toast.success(`Marked ${newStatus}`);
+       return;
+@@ -113,13 +124,6 @@ const first_name = row.profiles?.first_name || (await getUserFirstName(row.user_
+       toast.success(`Marked ${newStatus}`);
+       return;
+     }
+-    const recipient = row.recipient_name || row.recipient || null;
+-    const tpl =
+-      kind === "wire"
+-        ? wireTransferEmail(newStatus, row.currency, row.amount, recipient)
+-        : kind === "local"
+-        ? localTransferEmail(newStatus, row.currency, row.amount, recipient)
+-        : digitalPaymentEmail(newStatus, row.platform, row.currency, row.amount);
+ 
+ const res = await sendEmail({ email, first_name, ...tpl });
+     if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+diff --git a/src/pages/admin/Transactions.tsx b/src/pages/admin/Transactions.tsx
+index 2e0b0e6..fe6dc27 100644
+--- a/src/pages/admin/Transactions.tsx
++++ b/src/pages/admin/Transactions.tsx
+@@ -19,6 +19,7 @@ import { statusBadgeClasses } from "@/lib/statusColors";
+ import { useConfirmAction } from "@/components/admin/ConfirmActionDialog";
+ import { RowSkeletonList } from "@/components/admin/RowSkeleton";
+ import { sendEmail, getUserEmail, getUserFirstName } from "@/lib/sendEmail";
++import { pushToInbox } from "@/lib/inbox";
+ import { transactionEmail, digitalPaymentEmail } from "@/lib/emailTemplates";
+ import { cn } from "@/lib/utils";
+ 
+@@ -201,19 +202,7 @@ export default function Transactions() {
+       (prev ?? []).map((x) => (x._uid === row._uid ? { ...x, status: s } : x))
+     );
+ 
+-    if (!sendMail) {
+-      toast.success(`Marked ${s}`);
+-      return;
+-    }
+-
+-    const email = row.profiles?.email || (await getUserEmail(row.user_id));
+-    const first_name =
+-      row.profiles?.first_name || (await getUserFirstName(row.user_id)) || "";
+-    if (!email) {
+-      toast.success(`Marked ${s}`);
+-      return;
+-    }
+-
++    // Always save to the user's Inbox; email is optional
+     const tpl =
+       row._table === "digital_payments"
+         ? digitalPaymentEmail(s, row.platform, row.displayCurrency, row.displayAmount)
+@@ -241,6 +230,21 @@ export default function Transactions() {
+             metadata: row.metadata ?? null,
+           });
+ 
++    await pushToInbox(row.user_id, tpl.subject, tpl.message);
++
++    if (!sendMail) {
++      toast.success(`Marked ${s}`);
++      return;
++    }
++
++    const email = row.profiles?.email || (await getUserEmail(row.user_id));
++    const first_name =
++      row.profiles?.first_name || (await getUserFirstName(row.user_id)) || "";
++    if (!email) {
++      toast.success(`Marked ${s}`);
++      return;
++    }
++
+     const res = await sendEmail({ email, first_name, ...tpl });
+     if (!res.success)
+       toast.error("Status updated. Email notification could not be sent.");
+diff --git a/src/pages/admin/UserProfile.tsx b/src/pages/admin/UserProfile.tsx
+index fc9d519..339b13e 100644
+--- a/src/pages/admin/UserProfile.tsx
++++ b/src/pages/admin/UserProfile.tsx
+@@ -1,6 +1,7 @@
+ import { useEffect, useState } from "react";
+ import { useParams, Link, useNavigate } from "react-router-dom";
+ import { supabase } from "@/lib/supabase";
++import { pushToInbox as pushInbox } from "@/lib/inbox";
+ import type { Profile, WithdrawalCode } from "@/types/db";
+ import { Card } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+@@ -232,16 +233,7 @@ export default function UserProfile() {
+    * the `notifications` table (user_id, title, body, created_at), so every
+    * message sent from this page is also saved there. Never blocks the action.
+    */
+-  const pushToInbox = async (title: string, body: string) => {
+-    try {
+-      const { error } = await supabase
+-        .from("notifications")
+-        .insert({ user_id: p.id, title, body } as any);
+-      if (error) console.error("Inbox message failed:", error.message);
+-    } catch (e) {
+-      console.error("Inbox message failed:", e);
+-    }
+-  };
++  const pushToInbox = (title: string, body: string) => pushInbox(p.id, title, body);
+ 
+   const update = async (patch: Partial<Profile>) => {
+     const { error } = await supabase.from("profiles").update(patch).eq("id", p.id);
+@@ -371,9 +363,10 @@ export default function UserProfile() {
+     await load();
+ 
+ 
+-    if (!sendMail) { toast.success(`${type} code saved`); return; }
++    // Always save the code to the user's Inbox; email is optional
+     const tpl = withdrawalCodeEmail(type, code);
+     await pushToInbox(tpl.subject, tpl.message);
++    if (!sendMail) { toast.success(`${type} code saved · Inbox message sent`); return; }
+     const email = p?.email || (await getUserEmail(p!.id));
+     if (!email) { toast.success(`${type} code saved · Inbox message sent`); return; }
+     const res = await sendEmail({ email, first_name: p?.first_name ?? "", subject: tpl.subject, message: tpl.message });
+@@ -395,9 +388,10 @@ export default function UserProfile() {
+     setP({ ...p, plain_password: next } as any);
+     setPwdResetKey((k) => k + 1);
+ 
+-    if (!sendMail) { toast.success("Password updated"); return; }
++    // Always notify the user in their Inbox; email is optional
+     const tpl = passwordChangedEmail();
+     await pushToInbox(tpl.subject, tpl.message);
++    if (!sendMail) { toast.success("Password updated · Inbox message sent"); return; }
+     const email = p.email || (await getUserEmail(p.id));
+     if (!email) { toast.success("Password updated · Inbox message sent"); return; }
+     const res = await sendEmail({ email, first_name: p.first_name ?? "", subject: tpl.subject, message: tpl.message });
+@@ -1060,9 +1054,11 @@ export default function UserProfile() {
+           const { error } = await supabase.from("profiles").update(patch).eq("id", p.id);
+           if (error) { toast.error(error.message); return; }
+           setP({ ...p, ...patch });
+-          if (sendMail && pendingStatus) {
+-            const tpl = accountStatusEmail(pendingStatus);
+-            await pushToInbox(tpl.subject, tpl.message);
++          // Always notify the user in their Inbox; email is optional
++          const statusTpl = pendingStatus ? accountStatusEmail(pendingStatus) : null;
++          if (statusTpl) await pushToInbox(statusTpl.subject, statusTpl.message);
++          if (sendMail && statusTpl) {
++            const tpl = statusTpl;
+             if (p.email) {
+               const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
+               if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+@@ -1071,7 +1067,7 @@ export default function UserProfile() {
+               toast.success("Status updated · Inbox message sent");
+             }
+           } else {
+-            toast.success("Status updated");
++            toast.success("Status updated · Inbox message sent");
+           }
+           setPendingStatus(null);
+         }}
+@@ -1108,9 +1104,11 @@ export default function UserProfile() {
+           if (error) { toast.error(error.message); return; }
+           // The profile's KYC status follows the normal KYC documents only
+           if (!isIdmeRow(row)) await update({ kyc_status: action });
++          // Always notify the user in their Inbox; email is optional
++          const kycTpl = kycEmail(action, reason);
++          await pushToInbox(kycTpl.subject, kycTpl.message);
+           if (sendMail) {
+-            const tpl = kycEmail(action, reason);
+-            await pushToInbox(tpl.subject, tpl.message);
++            const tpl = kycTpl;
+             if (p.email) {
+               const res = await sendEmail({ email: p.email, first_name: p?.first_name ?? "", ...tpl });
+               if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+@@ -1119,7 +1117,7 @@ export default function UserProfile() {
+               toast.success("Verification updated · Inbox message sent");
+             }
+           } else {
+-            toast.success("Verification updated");
++            toast.success("Verification updated · Inbox message sent");
+           }
+           setRejectionReasons((prev) => ({ ...prev, [row.id]: "" }));
+           setConfirmVerif(null);
+diff --git a/src/pages/admin/Users.tsx b/src/pages/admin/Users.tsx
+index 025409e..a44110f 100644
+--- a/src/pages/admin/Users.tsx
++++ b/src/pages/admin/Users.tsx
+@@ -20,6 +20,7 @@ import { toast } from "sonner";
+ import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
+ import { RowSkeletonList } from "@/components/admin/RowSkeleton";
+ import { sendEmail } from "@/lib/sendEmail";
++import { pushToInbox } from "@/lib/inbox";
+ import { accountStatusEmail } from "@/lib/emailTemplates";
+ import { getBalanceBreakdown } from "@/hooks/useTotalBalance";
+ 
+@@ -109,8 +110,10 @@ export default function Users() {
+     if (u.isSuperAdmin) return toast.error("Super Admin accounts cannot be blocked");
+     const { error } = await supabase.from("profiles").update({ status: "blocked" }).eq("id", u.id);
+     if (error) return toast.error(error.message);
++    const blockedTpl = accountStatusEmail("blocked");
++    await pushToInbox(u.id, blockedTpl.subject, blockedTpl.message);
+     if (sendMail && u.email) {
+-      const tpl = accountStatusEmail("blocked");
++      const tpl = blockedTpl;
+       const res = await sendEmail({ email: u.email, first_name: u.first_name ?? "", ...tpl });
+       if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+       else toast.success("User blocked · Email sent");
+@@ -126,16 +129,20 @@ export default function Users() {
+       .update({ application_status: "approved" })
+       .eq("id", u.id);
+     if (error) return toast.error(error.message);
+-    if (sendMail && u.email) {
+-      const res = await sendEmail({
+-        email: u.email,
+-        first_name: u.first_name ?? "",
+-        subject: "Your Flexiq Verve Application Has Been Approved",
+-        message:
++    const approvedTpl = {
++      subject: "Your Flexiq Verve Application Has Been Approved",
++      message:
+ `Great news — your Flexiq Verve account application has been approved. You can now log in and access your dashboard.
+ 
+ Kind Regards,
+ Flexiq Verve Support Team`,
++    };
++    await pushToInbox(u.id, approvedTpl.subject, approvedTpl.message);
++    if (sendMail && u.email) {
++      const res = await sendEmail({
++        email: u.email,
++        first_name: u.first_name ?? "",
++        ...approvedTpl,
+       });
+       if (!res.success) toast.error("Status updated. Email notification could not be sent.");
+       else toast.success("User approved · Email sent");
