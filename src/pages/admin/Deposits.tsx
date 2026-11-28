@@ -14,11 +14,18 @@ import { toast } from "sonner";
 // "wallet" = wallet_deposit_requests (a specific currency wallet)
 type Source = "main" | "wallet";
 
+// Whether "Add funds to user balance" is ticked by default. Flip to true to credit by default.
+const DEFAULT_ADD_FUNDS = false;
+
 export default function Deposits() {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
+  const [addFunds, setAddFunds] = useState<Record<string, boolean>>({});
   const { dialog, confirm } = useConfirmAction();
+
+  const rowKey = (d: any) => `${d.source}-${d.id}`;
+  const shouldAddFunds = (d: any) => addFunds[rowKey(d)] ?? DEFAULT_ADD_FUNDS;
 
   useEffect(() => {
     (async () => {
@@ -49,23 +56,29 @@ export default function Deposits() {
     })();
   }, []);
 
-  const applyAction = async (d: any, status: "approved" | "declined", sendMail: boolean) => {
+  const applyAction = async (
+    d: any,
+    status: "approved" | "declined",
+    sendMail: boolean,
+    credit: boolean
+  ) => {
     const isWallet = d.source === "wallet";
     const table = isWallet ? "wallet_deposit_requests" : "deposit_requests";
     // deposit_requests stores declines as "rejected"; wallet_deposit_requests as "declined"
     const dbStatus = status === "declined" && !isWallet ? "rejected" : status;
     const amount = Number(d.amount || 0);
+    const shouldCredit = status === "approved" && credit;
 
-    // 1. Credit FIRST on approve, so a request is never "approved" without the money landing.
-    if (status === "approved") {
-      if (isWallet) {
-        // Atomically credits the wallet AND marks the request approved
-        const { error } = await (supabase as any).rpc("approve_wallet_deposit", {
-          p_request_id: d.id,
-          p_credit: amount,
-        });
-        if (error) return toast.error(`Could not credit wallet: ${error.message}`);
-      } else {
+    if (shouldCredit && isWallet) {
+      // Atomically credits the wallet AND marks the request approved
+      const { error } = await (supabase as any).rpc("approve_wallet_deposit", {
+        p_request_id: d.id,
+        p_credit: amount,
+      });
+      if (error) return toast.error(`Could not credit wallet: ${error.message}`);
+    } else {
+      // Credit FIRST, so a request is never "approved" without the money landing.
+      if (shouldCredit && !isWallet) {
         const { data: profile, error: readErr } = await supabase
           .from("profiles")
           .select("balance")
@@ -79,11 +92,8 @@ export default function Deposits() {
           .update({ balance: Number(profile?.balance ?? 0) + amount })
           .eq("id", d.user_id);
         if (balErr) return toast.error(`Could not credit balance: ${balErr.message}`);
-
-        const { error } = await supabase.from(table).update({ status: dbStatus }).eq("id", d.id);
-        if (error) return toast.error(error.message);
       }
-    } else {
+
       const { error } = await (supabase as any).from(table).update({ status: dbStatus }).eq("id", d.id);
       if (error) return toast.error(error.message);
     }
@@ -92,21 +102,31 @@ export default function Deposits() {
       prev.map((x) => (x.id === d.id && x.source === d.source ? { ...x, status: dbStatus } : x))
     );
 
-    if (!sendMail) { toast.success(`Deposit ${status}`); return; }
+    const label = shouldCredit ? "Deposit approved · funds added" : `Deposit ${status}`;
+    if (!sendMail) { toast.success(label); return; }
+
     const email = d.profiles?.email || (await getUserEmail(d.user_id));
-    if (!email) { toast.success(`Deposit ${status}`); return; }
-    const cur = isWallet ? d.wallet_currency : d.currency;
-    const tpl = depositEmail(status, cur, d.amount);
+    if (!email) { toast.success(label); return; }
+
+    const cur = (isWallet ? d.wallet_currency : d.currency) || "USD";
+    const tpl = depositEmail(status, cur, amount, shouldCredit);
     const res = await sendEmail({ email, first_name: d.profiles?.first_name ?? "", ...tpl });
     if (!res.success) toast.error("Status updated. Email notification could not be sent.");
-    else toast.success(`Deposit ${status} · Email sent`);
+    else toast.success(`${label} · Email sent`);
   };
 
   const requestAction = (d: any, status: "approved" | "declined") =>
     confirm({
       title: status === "approved" ? "Approve Deposit" : "Decline Deposit",
-      description: `Do you want to ${status === "approved" ? "approve" : "decline"} this deposit?`,
-      onConfirm: (sm) => applyAction(d, status, sm),
+      description:
+        status === "approved"
+          ? `Approve this deposit? ${
+              shouldAddFunds(d)
+                ? "Funds WILL be added to the user's balance."
+                : "Funds will NOT be added to the user's balance."
+            }`
+          : "Do you want to decline this deposit?",
+      onConfirm: (sm) => applyAction(d, status, sm, shouldAddFunds(d)),
     });
 
   return (
@@ -123,7 +143,7 @@ export default function Deposits() {
           const isApproved = d.status === "approved";
           const isDeclined = d.status === "rejected" || d.status === "declined";
           return (
-            <Card key={`${d.source}-${d.id}`} className="p-4">
+            <Card key={rowKey(d)} className="p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{fullName(d.profiles)}</p>
@@ -145,6 +165,20 @@ export default function Deposits() {
                   </Badge>
                 </div>
               </div>
+
+              {!isApproved && !isDeclined && (
+                <label className="flex items-center justify-end gap-2 mt-2 text-xs text-muted-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={shouldAddFunds(d)}
+                    onChange={(e) =>
+                      setAddFunds((p) => ({ ...p, [rowKey(d)]: e.target.checked }))
+                    }
+                  />
+                  Add funds to user balance
+                </label>
+              )}
+
               <div className="flex gap-2 mt-2 justify-end">
                 <button
                   disabled={isApproved}
