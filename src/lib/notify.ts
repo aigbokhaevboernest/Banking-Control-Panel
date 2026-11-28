@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { pushToInbox } from "@/lib/inbox";
 
 /**
  * Sends an email notification via a Supabase Edge Function named `send-email`.
@@ -18,6 +19,10 @@ export async function sendEmail(opts: {
   user_id?: string | null;
 }) {
   const { to, subject, html, text, user_id } = opts;
+
+  // Inbox first: saved even when there is no email address or the email fails
+  if (user_id) await pushToInbox(user_id, subject, text ?? html ?? subject);
+
   if (!to) return { ok: false, error: "Missing recipient" };
 
   // Try edge function (no-op if not deployed)
@@ -27,20 +32,6 @@ export async function sendEmail(opts: {
     });
   } catch (e) {
     console.warn("send-email edge function not available", e);
-  }
-
-  // Best-effort in-app notification (ignore if table doesn't exist)
-  if (user_id) {
-    try {
-      await supabase.from("notifications").insert({
-        user_id,
-        title: subject,
-        body: text ?? html ?? subject,
-        read: false,
-      });
-    } catch (e) {
-      // ignore
-    }
   }
 
   return { ok: true };
