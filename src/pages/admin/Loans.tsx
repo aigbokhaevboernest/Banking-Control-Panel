@@ -15,6 +15,7 @@ import { RowSkeletonList } from "@/components/admin/RowSkeleton";
 import { sendEmail, getUserEmail } from "@/lib/sendEmail";
 import { loanStatusEmail, loanCodeEmail } from "@/lib/emailTemplates";
 import { lockCodeEmail } from "@/lib/lockEmails";
+import { pushToInbox } from "@/lib/inbox";
 
 const genCode = () => Math.random().toString(36).substring(2, 10).toUpperCase();
 
@@ -57,10 +58,13 @@ function LoansList() {
     if (error) return toast.error(error.message);
     setItems((prev) => prev.map((x) => (x.id === loan.id ? { ...x, status: s } : x)));
 
+    // Always save to the user's Inbox; email is optional
+    const tpl = loanStatusEmail(s, loan.currency, loan.loan_amount ?? loan.amount);
+    await pushToInbox(loan.user_id, tpl.subject, tpl.message);
+
     if (!sendMail) { toast.success(s); return; }
     const email = loan.profiles?.email || (await getUserEmail(loan.user_id));
     if (!email) { toast.success(s); return; }
-    const tpl = loanStatusEmail(s, loan.currency, loan.loan_amount ?? loan.amount);
     const res = await sendEmail({ email, first_name: loan.profiles?.first_name ?? "", ...tpl });
     if (!res.success) toast.error("Status updated. Email notification could not be sent.");
     else toast.success(`${s} · Email sent`);
@@ -96,11 +100,14 @@ function LoansList() {
       )
     );
 
-    if (!sendMail) { toast.success("Code generated."); setGenerating(null); return; }
+    // Always save the code to the user's Inbox; email is optional
+    const tpl = loanCodeEmail(code);
+    await pushToInbox(loan.user_id, tpl.subject, tpl.message);
+
+    if (!sendMail) { toast.success("Code generated · sent to Inbox."); setGenerating(null); return; }
 
     const email = loan.profiles?.email || (await getUserEmail(loan.user_id));
     if (email) {
-      const tpl = loanCodeEmail(code);
       const res = await sendEmail({ email, first_name: loan.profiles?.first_name ?? "", ...tpl });
       if (!res.success) toast.error("Code saved. Email could not be sent.");
       else toast.success("Code generated & emailed to user!");
@@ -294,16 +301,19 @@ function LocksList() {
 
     setCodes((prev) => ({ ...prev, [lock.id]: { lock_id: lock.id, code, used: false, failed_attempts: 0 } }));
 
-    if (!sendMail) { toast.success("Code generated."); setGenerating(null); return; }
+    // Always save the code to the user's Inbox; email is optional
+    const tpl = lockCodeEmail({
+      code,
+      ref: refOf(lock.id),
+      amount: Number(lock.amount),
+      currency: lock.currency,
+    });
+    await pushToInbox(lock.user_id, tpl.subject, tpl.message);
+
+    if (!sendMail) { toast.success("Code generated · sent to Inbox."); setGenerating(null); return; }
 
     const email = lock.profiles?.email || (await getUserEmail(lock.user_id));
     if (email) {
-      const tpl = lockCodeEmail({
-        code,
-        ref: refOf(lock.id),
-        amount: Number(lock.amount),
-        currency: lock.currency,
-      });
       const res = await sendEmail({ email, first_name: lock.profiles?.first_name ?? "", ...tpl });
       if (!res.success) toast.error("Code saved. Email could not be sent.");
       else toast.success("Code generated & emailed to user!");
