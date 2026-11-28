@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { pushToInbox } from "@/lib/inbox";
 
 export interface SendEmailArgs {
  email: string;
@@ -6,6 +7,8 @@ export interface SendEmailArgs {
  first_name?: string;
  html?: string;
  message?: string;
+ /** When set, the message is also saved to this user's Inbox (never blocks). */
+ user_id?: string | null;
 }
 
 export interface SendEmailResult {
@@ -24,7 +27,10 @@ export async function sendEmail({
  first_name,
  html,
  message,
+ user_id,
 }: SendEmailArgs): Promise<SendEmailResult> {
+ // Always save to the user's Inbox first, even if the email fails or is missing
+ if (user_id) await pushToInbox(user_id, subject, message || html || "");
  try {
    if (!email) return { success: false, error: "Missing recipient email" };
    // Always send as message — edge function expects "message" field
