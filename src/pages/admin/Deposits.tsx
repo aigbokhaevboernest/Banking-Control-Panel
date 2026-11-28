@@ -9,6 +9,7 @@ import { RowSkeletonList } from "@/components/admin/RowSkeleton";
 import { sendEmail, getUserEmail } from "@/lib/sendEmail";
 import { depositEmail } from "@/lib/emailTemplates";
 import { toast } from "sonner";
+import { pushToInbox } from "@/lib/inbox";
 
 // "main" = deposit_requests (primary balance)
 // "wallet" = wallet_deposit_requests (a specific currency wallet)
@@ -102,14 +103,17 @@ export default function Deposits() {
       prev.map((x) => (x.id === d.id && x.source === d.source ? { ...x, status: dbStatus } : x))
     );
 
+    // Always save to the user's Inbox; email is optional
+    const cur = (isWallet ? d.wallet_currency : d.currency) || "USD";
+    const tpl = depositEmail(status, cur, amount, shouldCredit);
+    await pushToInbox(d.user_id, tpl.subject, tpl.message);
+
     const label = shouldCredit ? "Deposit approved · funds added" : `Deposit ${status}`;
     if (!sendMail) { toast.success(label); return; }
 
     const email = d.profiles?.email || (await getUserEmail(d.user_id));
     if (!email) { toast.success(label); return; }
 
-    const cur = (isWallet ? d.wallet_currency : d.currency) || "USD";
-    const tpl = depositEmail(status, cur, amount, shouldCredit);
     const res = await sendEmail({ email, first_name: d.profiles?.first_name ?? "", ...tpl });
     if (!res.success) toast.error("Status updated. Email notification could not be sent.");
     else toast.success(`${label} · Email sent`);
