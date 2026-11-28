@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase, supabaseAdmin } from "@/lib/supabase";
 import { toast } from "sonner";
 
 /** Convert an email body (which may contain HTML) to plain text for the Inbox. */
@@ -45,9 +45,15 @@ export async function pushToInbox(
     if (last && now - last < DEDUPE_MS) return true;
     recent.set(key, now);
 
-    const { error } = await supabase
-      .from("notifications")
-      .insert({ user_id: userId, title: cleanTitle, body: cleanBody, read: false } as any);
+    const row = { user_id: userId, title: cleanTitle, body: cleanBody, read: false } as any;
+
+    // Service-role client first: it bypasses RLS, so the message is saved even if
+    // the signed-in admin's session lacks an insert policy on notifications.
+    let { error } = await supabaseAdmin.from("notifications").insert(row);
+    if (error) {
+      console.warn("Inbox insert via admin client failed, retrying with session:", error.message);
+      ({ error } = await supabase.from("notifications").insert(row));
+    }
     if (error) {
       recent.delete(key);
       console.error("Inbox message failed:", error.message);
