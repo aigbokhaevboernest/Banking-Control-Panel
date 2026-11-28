@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { ConfirmActionDialog } from "@/components/admin/ConfirmActionDialog";
 import { RowSkeletonList } from "@/components/admin/RowSkeleton";
 import { sendEmail } from "@/lib/sendEmail";
+import { pushToInbox } from "@/lib/inbox";
 import { accountStatusEmail } from "@/lib/emailTemplates";
 import { getBalanceBreakdown } from "@/hooks/useTotalBalance";
 
@@ -109,8 +110,10 @@ export default function Users() {
     if (u.isSuperAdmin) return toast.error("Super Admin accounts cannot be blocked");
     const { error } = await supabase.from("profiles").update({ status: "blocked" }).eq("id", u.id);
     if (error) return toast.error(error.message);
+    const blockedTpl = accountStatusEmail("blocked");
+    await pushToInbox(u.id, blockedTpl.subject, blockedTpl.message);
     if (sendMail && u.email) {
-      const tpl = accountStatusEmail("blocked");
+      const tpl = blockedTpl;
       const res = await sendEmail({ email: u.email, first_name: u.first_name ?? "", ...tpl });
       if (!res.success) toast.error("Status updated. Email notification could not be sent.");
       else toast.success("User blocked · Email sent");
@@ -126,16 +129,20 @@ export default function Users() {
       .update({ application_status: "approved" })
       .eq("id", u.id);
     if (error) return toast.error(error.message);
-    if (sendMail && u.email) {
-      const res = await sendEmail({
-        email: u.email,
-        first_name: u.first_name ?? "",
-        subject: "Your Flexiq Verve Application Has Been Approved",
-        message:
+    const approvedTpl = {
+      subject: "Your Flexiq Verve Application Has Been Approved",
+      message:
 `Great news — your Flexiq Verve account application has been approved. You can now log in and access your dashboard.
 
 Kind Regards,
 Flexiq Verve Support Team`,
+    };
+    await pushToInbox(u.id, approvedTpl.subject, approvedTpl.message);
+    if (sendMail && u.email) {
+      const res = await sendEmail({
+        email: u.email,
+        first_name: u.first_name ?? "",
+        ...approvedTpl,
       });
       if (!res.success) toast.error("Status updated. Email notification could not be sent.");
       else toast.success("User approved · Email sent");
